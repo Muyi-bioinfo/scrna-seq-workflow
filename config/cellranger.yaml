@@ -1,0 +1,24 @@
+###############################################################################
+### cellranger.yaml — 上游定量配置（与下游 R 分析解耦）
+###
+### 设计原则：
+###   1. 本文件只放 cellranger 工具级参数（参考基因组/硬件资源/定量行为），
+###      跨项目可直接复用；下游 R 分析参数在 config.yaml / config.multi.yaml
+###   2. 样本级信息（id、fastqs、matrix）在 config/sample_sheet.csv，不进本文件
+###   3. 每次运行会把本文件快照到 output/<batch>/00_cellranger/cellranger_config_used.yaml
+###
+### 使用：bash bash/00_run_cellranger.sh [主config] [cellranger配置]
+###############################################################################
+
+# 参考基因组：10x 预构建下载解压到 data/reference/refdata/ 后填路径
+transcriptome: data/reference/refdata/refdata-gex-GRCh38-2024-A
+
+# 预估细胞数：帮助算法在"真细胞 barcode vs 背景"间划阈值，宁多勿少
+expect_cells: 1000
+
+# 是否输出 BAM（Cell Ranger 9 起必填；做 velocyto RNA 速率需 true）
+create_bam: false
+
+# 硬件资源
+localcores: 16
+localmem: 8

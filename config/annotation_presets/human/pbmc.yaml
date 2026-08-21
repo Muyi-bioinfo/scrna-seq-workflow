@@ -1,0 +1,99 @@
+# ============================================================
+# human/pbmc — 人外周血 PBMC 常见细胞类型 marker 预设
+# ============================================================
+
+description: 人外周血 PBMC 主要细胞类型 marker（含 IFN 刺激数据中出现的活化亚群）
+tissue: peripheral blood (PBMC)
+species: human
+source: 人工核查自《单细胞分析中常见marker基因汇总》（经典 marker 表）
+        + Seurat PBMC3k vignette + PanglaoDB + IFNB (GSE96583) 注释惯例
+version: 2026-08-21
+
+celltypes:
+  "Naive CD4+ T":
+    markers:
+      tier1: [CD3D, CD3E, CD4, IL7R, CCR7]
+      tier2: [CD2, PTPRC, TCF7]
+    aliases: ["CD4 Naive T", "CD4+ Naive T"]
+
+  "Memory CD4+ T":
+    markers:
+      tier1: [CD3D, CD4, IL7R, S100A4]
+      tier2: [CD2, PTPRC]
+    aliases: ["CD4 Memory T", "Memory CD4+"]
+
+  "CD8+ T":
+    markers:
+      tier1: [CD3D, CD8A, CD8B]
+      tier2: [CD2, PTPRC, GZMK]
+    aliases: ["CD8 T", "CD8+ T cells"]
+
+  "Activated T":
+    markers:
+      tier1: [CD3D, IL2RA, CD69]
+      tier2: [IFNG, GZMB]
+    aliases: ["T activated"]
+
+  "B cell":
+    markers:
+      tier1: [CD19, MS4A1, CD79A]
+      tier2: [CD79B]
+    negative: [CD3D]
+    aliases: ["B cells"]
+
+  "Activated B":
+    markers:
+      tier1: [CD79A, MS4A1, CD38]
+      tier2: [MZB1]
+    aliases: ["B activated"]
+
+  "Plasma cell":
+    markers:
+      tier1: [MZB1, IGHG1, SDC1]
+      tier2: [CD79A, CD38, CD27]
+    negative: [MS4A1]              # 浆细胞 CD20 阴性（区别于 B 细胞）
+    aliases: ["Plasma", "Plasma B"]
+
+  "NK":
+    markers:
+      tier1: [GNLY, NKG7, FGFBP2]
+      tier2: [FCGR3A, KLRD1, CX3CR1]
+    negative: [CD3D]
+    aliases: ["NK cells"]
+
+  "CD14+ Mono":
+    markers:
+      tier1: [CD14, LYZ, S100A9]
+      tier2: [S100A8, CD68]
+    aliases: ["CD14 Mono", "CD14+ Monocyte"]
+
+  "FCGR3A+ Mono":
+    markers:
+      tier1: [FCGR3A, MS4A7]
+      tier2: [LYZ, CD68]
+    negative: [CD14]               # CD16+ 单核 CD14 阴性
+    aliases: ["CD16 Mono", "FCGR3A+ Monocyte"]
+
+  "DC":
+    markers:
+      tier1: [FCER1A, CST3]
+      tier2: [CLEC10A, CD1C]
+    aliases: ["cDC", "Dendritic cell"]
+
+  "pDC":
+    markers:
+      tier1: [LILRA4, CLEC4C]
+      tier2: [IL3RA]
+    aliases: ["Plasmacytoid DC"]
+
+  "Platelet":
+    markers:
+      tier1: [PPBP, PF4]
+      tier2: [NRGN]
+    aliases: ["Mk", "Megakaryocyte"]
+
+  "Erythrocyte":
+    markers:
+      tier1: [HBA1, HBB]
+      tier2: [HBA2]
+    aliases: ["Eryth", "RBC"]

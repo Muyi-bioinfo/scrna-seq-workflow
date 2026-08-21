@@ -1,0 +1,68 @@
+# ============================================================
+# human/brain — 人脑主要细胞类型 marker 预设
+# ============================================================
+
+description: 人脑主要细胞类型 marker（神经元 + 胶质 + 血管/基质）
+tissue: brain
+species: human
+source: 人工核查自《单细胞分析中常见marker基因汇总》（神经系统表）
+        + 修正记录：剔 EBF1（B 细胞 TF，非内皮，疑似抄错）；
+        剔 PCDH15（内耳毛细胞基因，非抑制性神经元）；
+        Pericyte 剔成纤维污染（DCN/LUM/GSN/FGF7/MME），补 PDGFRB/NOTCH3；
+        星形胶质补经典 GFAP；基因符号转人源大写
+version: 2026-08-21
+
+celltypes:
+  "Astrocyte":
+    markers:
+      tier1: [AQP4, GFAP]
+      tier2: [ADGRV1, GPC5, RYR3]
+    aliases: ["星形胶质细胞"]
+
+  "Excitatory neuron":
+    markers:
+      tier1: [CAMK2A]
+      tier2: [CBLN2, LDB2]
+    aliases: ["兴奋性神经元"]
+
+  "Inhibitory neuron":
+    markers:
+      tier1: [GAD1]
+      tier2: [LHFPL3]
+    aliases: ["抑制性神经元"]
+
+  "Microglia":
+    markers:
+      tier1: [C3, DOCK8]
+      tier2: [LRMDA]
+    aliases: ["小胶质细胞"]
+
+  "Oligodendrocyte":
+    markers:
+      tier1: [MBP, PLP1]
+      tier2: [ST18]
+    aliases: ["少突胶质细胞"]
+
+  "OPC":
+    markers:
+      tier1: [TNR, GPR17]
+      tier2: [IGSF21, NEU4]
+    aliases: ["Oligodendrocyte precursor"]
+
+  "Ependymal":
+    markers:
+      tier1: [CFAP126, FAM183B, PIFO]
+      tier2: [TMEM212, TEKT1, DNAH12]
+    aliases: ["室管膜细胞"]
+
+  "Brain Endothelial":
+    markers:
+      tier1: [CLDN5, ABCB1]
+      tier2: [PECAM1, VWF]
+    aliases: ["Endothelial", "内皮细胞"]
+
+  "Pericyte":
+    markers:
+      tier1: [RGS5, PDGFRB, ACTA2]
+      tier2: [NOTCH3]
+    aliases: ["周细胞"]

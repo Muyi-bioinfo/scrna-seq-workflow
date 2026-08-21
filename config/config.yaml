@@ -1,0 +1,87 @@
+###############################################################################
+### config.yaml — 单样本流程配置（PBMC 3k 示例，默认配置）
+###
+### 设计原则（借鉴 GitHub 主流 scRNA-seq 项目结构）：
+###   1. 所有参数集中在这里，脚本本身不含任何硬编码参数
+###   2. 每个步骤脚本独立读取本文件，可单独重跑/单独投递服务器节点
+###   3. 修改参数后重跑对应步骤即可，无需改代码
+###   4. 多样本流程用 config/config.multi.yaml（run_pipeline.sh --mode multi 自动切换）
+###############################################################################
+
+# ---------- 项目与目录 ----------
+mode: single              # 分析模式：single（单样本）/ multi（多样本）
+batch: run01              # 运行批次：本次运行的结果与日志归档到 output/<batch>/ 和 logs/<batch>/
+                          # 同批次名重跑 = 断点续跑；换批次名 = 全新运行（旧批次结果保留）
+                          # 建议不同模式/不同参数组合用不同批次名，便于对比追溯
+
+project:
+  name: pbmc3k            # 项目名（写入 Seurat 对象 orig.ident）
+
+dirs:
+  base: output            # 结果根目录（每步一个子目录，如 output/02_qc_filter/）
+  data: data              # 数据根目录
+
+# ---------- 单样本模式 ----------
+single:
+  data_dir: data/matrices/pbmc3k   # 10x 三件套目录
+  project: pbmc3k
+  group:                  # 单个样本无分组时留空；有多组时填组名
+
+# ---------- 模块 2：质控 ----------
+qc:
+  mt_pattern: "^MT-"      # 线粒体基因匹配模式：人 "^MT-"，小鼠 "^mt-"
+  min_cells: 3            # 读入阶段：基因至少在 N 个细胞中表达（01 读入时过滤）
+  nfeature_min: 200       # 细胞最低基因数（过滤空液滴；01 读入与质控共用同一阈值）
+  nfeature_max: 2500      # 细胞最高基因数（初步过滤疑似双细胞）
+  percent_mt_max: 5       # 线粒体比例上限（过滤凋亡细胞）
+  doublet_enable: true    # 双细胞检测（scDblFinder，多样本时逐样本检测）
+
+# ---------- 模块 3：预处理 ----------
+preprocess:
+  nfeatures: 2000         # 高变基因数
+  npcs: 30                # PCA 主成分数
+  scale_all: false        # 是否全基因缩放（true 内存爆炸，仅小数据/热图需要）
+
+# ---------- 模块 4：聚类 ----------
+cluster:
+  reduction: pca          # 使用的降维
+  dims_start: 1           # 使用维度区间（由 ElbowPlot 拐点决定）
+  dims_end: 15
+  resolution: 0.5         # 分群分辨率（越大群越多）
+
+# ---------- 模块 6：细胞注释（单样本 PBMC3k 的 9 群映射）----------
+# 先在 04 的 dimplot_clusters 上确认群数和编号，再填映射
+annotate:
+  preset: human/pbmc        # 注释 marker 预设（config/annotation_presets/ 下，物种文件夹）
+  marker_pct: 0.5           # marker 预筛选：pct.1 阈值（基因在群内表达比例，默认 0.5）。
+                            # v5 logFC 公式变化使低表达基因 logFC 虚高，先筛后按 logFC 排序
+  # marker_genes: [MS4A1, CD79A]   # 显式扁平列表（优先于 preset，一般不用）
+  cluster_map:
+    "0": "Naive CD4+ T"
+    "1": "CD14+ Mono"
+    "2": "Memory CD4+"
+    "3": "B cell"
+    "4": "CD8+ T"
+    "5": "FCGR3A+ Mono"
+    "6": "NK"
+    "7": "DC"
+    "8": "Platelet"
+
+# ---------- 模块 7：亚群细分（在 03_annotate.R 里顺带执行，enable 控制开关）----------
+subcluster:
+  enable: false           # 单样本示例不开亚群；多样本 config.multi.yaml 里开
+  cluster: "1"            # 要细分的群编号
+  resolution: 0.5
+
+# ---------- 高级模块（run_pipeline.sh --with-advanced 启用）----------
+advanced:
+  gene_set_gmt: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt   # 06_gene_set_score：基因集打分用 gmt 文件
+  # gene_set_show:                    # 06：FeaturePlot 展示的通路名（每个通路单独一张图；留空 = 取 gmt 前两条）
+  #   - HALLMARK_INTERFERON_ALPHA_RESPONSE
+  trajectory:
+    num_dim: 50               # 07_trajectory_analysis：monocle3 预处理维度数
+    # preset: XXX             # 07：谱系预设文件名（config/trajectory_presets/ 下；留空 = 全部细胞）
+    # reduction: raw          # 07：轨迹空间——raw(自算,保信号) / harmony(校正嵌入) / umap(复用Seurat UMAP)
+    # root_celltype: XXX      # 07：伪时间根（轨迹起点，留空则自动用最大细胞群）
+  cellchat:
+    species: human            # 08_cell_communication：配体-受体数据库物种（human / mouse）

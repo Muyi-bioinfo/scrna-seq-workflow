@@ -1,0 +1,117 @@
+###############################################################################
+### config.multi.yaml — 多样本流程配置（STIM/CTRL 双样本示例）
+### run_pipeline.sh --mode multi 时自动加载本文件
+###
+### 设计原则（借鉴 GitHub 主流 scRNA-seq 项目结构）：
+###   1. 所有参数集中在这里，脚本本身不含任何硬编码参数
+###   2. 每个步骤脚本独立读取本文件，可单独重跑/单独投递服务器节点
+###   3. 修改参数后重跑对应步骤即可，无需改代码
+###############################################################################
+
+# ---------- 项目与目录 ----------
+mode: multi               # 分析模式：single（单样本）/ multi（多样本）
+batch: run02              # 运行批次：本次运行的结果与日志归档到 output/<batch>/ 和 logs/<batch>/
+                          # 同批次名重跑 = 断点续跑；换批次名 = 全新运行（旧批次结果保留）
+                          # 不同模式用不同批次名（run01 是单样本批次，run02 是多样本批次）
+
+project:
+  name: pbmc_stim_ctrl    # 项目名（写入 Seurat 对象 orig.ident）
+
+dirs:
+  base: output            # 结果根目录（每步一个子目录，如 output/02_qc_filter/）
+  data: data              # 数据根目录
+
+# ---------- 多样本模式 ----------
+multi:
+  sample_sheet: config/sample_sheet.csv   # 样本表：sample, group, fastqs, matrix 四列
+                                          # fastqs：该样本 FASTQ 目录（先跑 00_run_cellranger）
+                                          # matrix：10x 矩阵目录/h5（cellranger 输出或任何三件套）
+                                          # 两者填一个即可；都空则自动找本批次 cellranger 输出
+
+# ---------- 模块 2：质控 ----------
+qc:
+  mt_pattern: "^MT-"      # 线粒体基因匹配模式：人 "^MT-"，小鼠 "^mt-"
+  min_cells: 3            # 读入阶段：基因至少在 N 个细胞中表达（01 读入时过滤）
+  nfeature_min: 200       # 细胞最低基因数（过滤空液滴；01 读入与质控共用同一阈值）
+  nfeature_max: 2500      # 细胞最高基因数（初步过滤疑似双细胞）
+  percent_mt_max: 5       # 线粒体比例上限（过滤凋亡细胞）
+  doublet_enable: true    # 双细胞检测（scDblFinder，多样本时逐样本检测）
+
+# ---------- 模块 3：预处理 ----------
+preprocess:
+  nfeatures: 2000         # 高变基因数
+  npcs: 30                # PCA 主成分数
+  scale_all: false        # 是否全基因缩放（true 内存爆炸，仅小数据/热图需要）
+
+# ---------- 模块 4：聚类 ----------
+cluster:
+  reduction: pca          # 使用的降维
+  dims_start: 1           # 使用维度区间（由 ElbowPlot 拐点决定）
+  dims_end: 15
+  resolution: 0.5         # 分群分辨率（越大群越多）
+
+# ---------- 模块 5：多样本整合 ----------
+integrate:
+  method: harmony         # harmony（经典）/ rpca / mnn（v5 IntegrateLayers 统一接口）
+  dims_start: 1
+  dims_end: 30
+  resolution: 0.5
+
+# ---------- 模块 6：细胞注释 ----------
+annotate:
+  preset: human/pbmc        # 注释 marker 预设（config/annotation_presets/ 下，物种文件夹）
+  marker_pct: 0.5           # marker 预筛选：pct.1 阈值（基因在群内表达比例，默认 0.5）。
+                            # v5 logFC 公式变化使低表达基因 logFC 虚高，先筛后按 logFC 排序
+  # marker_genes: [MS4A1, CD79A]   # 显式扁平列表（优先于 preset，一般不用）
+  cluster_map:            # 分群编号 → 细胞类型（先在 04/05 的 DimPlot 上确认群数再填）
+    "0": "CD4 Naive T"
+    "1": "CD14 Mono"
+    "2": "CD4 Memory T"
+    "3": "CD8 T"
+    "4": "B cell"
+    "5": "NK"
+    "6": "CD16 Mono"
+    "7": "T activated"
+    "8": "Mk"
+    "9": "B activated"
+    "10": "cDC"
+    "11": "Eryth"
+    "12": "pDC"
+
+# ---------- 模块 7：亚群细分（在 03_annotate.R 里顺带执行，enable 控制开关）----------
+subcluster:
+  enable: true            # 多样本示例开启亚群细分
+  cluster: "0"            # 要细分的群编号（当前聚类中 0 = CD4 Naive T）
+  resolution: 0.5
+
+# ---------- 模块 8：多组可视化 ----------
+multi_group:
+  group_col: group        # 分组列名
+
+# ---------- 模块 9：差异分析 + GSEA ----------
+diff_gsea:
+  gmt_kegg: data/reference/gene_sets/c2.cp.kegg.v2022.1.Hs.symbols.gmt        # MSigDB KEGG 基因集
+  gmt_hallmark: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt         # MSigDB Hallmark 基因集
+  ident_compare: "CD14 Mono"                                  # 刺激-对照比较的细胞类型
+  ident1_group: STIM                                          # 处理组（logFC 正向，默认按字母倒序）
+  organism: human                # 物种：human / mouse（决定 OrgDb 与 KEGG 富集背景）
+  exclude_celltypes:             # 富集时剔除的细胞类型（低价值类型，名字须与注释完全一致）
+    - Eryth
+    - Mk
+
+# ---------- 高级模块（run_pipeline.sh --with-advanced 启用）----------
+advanced:
+  gene_set_gmt: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt   # 06_gene_set_score：基因集打分用 gmt 文件
+  gene_set_show:                                                         # 06：FeaturePlot 展示的通路名（每个通路单独一张图；留空 = 取 gmt 前两条）
+    - HALLMARK_INTERFERON_ALPHA_RESPONSE   # IFN-β 刺激数据展示 IFN 通路（刺激后暴涨 27 倍）
+    - HALLMARK_INTERFERON_GAMMA_RESPONSE
+  trajectory:
+    num_dim: 50               # 07_trajectory_analysis：monocle3 预处理维度数
+    preset: pbmc_T_cell       # 07：谱系预设文件名（config/trajectory_presets/ 下；留空 = 全部细胞）
+    reduction: raw            # 07：轨迹空间——raw=自算PCA/UMAP(不校正,适合批次=生物学条件)
+                              #                harmony=校正嵌入(适合技术批次)  umap=复用Seurat UMAP(坐标与DimPlot一致)
+    # 主 config 显式参数优先于预设，需要临时覆盖时取消注释：
+    # root_celltype: CD4 Naive T         # 伪时间根（轨迹起点）
+    # subset_celltypes: [CD4 Naive T, CD4 Memory T]
+  cellchat:
+    species: human            # 08_cell_communication：配体-受体数据库物种（human / mouse）

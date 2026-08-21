@@ -1,0 +1,53 @@
+# ============================================================
+# human/hcc — 人肝细胞癌组织主要细胞类型 marker 预设
+# ============================================================
+
+description: 人肝细胞癌组织主要细胞类型 marker（肿瘤 + 免疫 + 基质）
+tissue: liver (hepatocellular carcinoma)
+species: human
+source: 人工核查自《单细胞分析中常见marker基因汇总》（肝细胞癌表）
+        + 修正记录：Serpinalc→SERPINA1（OCR）
+version: 2026-08-21
+
+celltypes:
+  "Epithelial/Tumor":
+    markers:
+      tier1: [EPCAM, KRT19, KRT7]
+      tier2: [PROM1, ALDH1A1]
+    aliases: ["Tumor", "Epithelial", "上皮/肿瘤"]
+
+  "HCC Hepatocyte":
+    markers:
+      tier1: [APOC3, FABP1, APOA1, SERPINA1]
+      tier2: []
+    aliases: ["Hepatocyte", "肝细胞"]
+
+  "T cell":
+    markers:
+      tier1: [CD3D, CD3E, CD4, CD8A]
+      tier2: [PTPRC]
+    aliases: ["T 细胞"]
+
+  "Myeloid":
+    markers:
+      tier1: [CD68, CD163, CD14, CSF1R]
+      tier2: [CSF3R]
+    aliases: ["髓系", "Myeloid cell"]
+
+  "B/Plasma":
+    markers:
+      tier1: [CD19, CD79A, IGHG1]
+      tier2: [MZB1, SDC1]
+    aliases: ["B/浆细胞"]
+
+  "Fibroblast":
+    markers:
+      tier1: [FGF7, MME, ACTA2, DCN, LUM, GSN]
+      tier2: []
+    aliases: ["成纤维细胞"]
+
+  "Endothelial":
+    markers:
+      tier1: [PECAM1, VWF, PLVAP]
+      tier2: [PROX1, ACKR1]
+    aliases: ["内皮细胞"]

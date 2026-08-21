@@ -1,0 +1,28 @@
+# ============================================================
+# 注释预设模板（复制本文件到 human/ 或 mouse/ 下，以组织名命名）
+#
+# 规则：
+#   1. config 引用方式：annotate$preset: human/pbmc（文件夹/文件名，不含 .yaml）
+#   2. species 必须与所在文件夹一致（human / mouse），加载时会校验
+#   3. 基因符号与物种对应：human 全大写（CD3D），mouse 首字母大写（Cd3d）
+#   4. markers 分级：tier1 = 公认经典（判断依据），tier2 = 辅助证据；
+#      03 可视化双视图：DotPlot 总览（全部 tier1 × cluster）+ 每类型一张 FeaturePlot；
+#      全部 marker（tier1+tier2）用于存在性校验与将来扩展
+#   5. negative = 该类型"不表达"的经典基因（可选，如浆细胞的 CD20）
+#   6. aliases = 文献/数据集中的同义名，cluster_map 填别名也能通过一致性校验
+#   7. source 注明出处（数据库/文献/人工核查），version 为更新日期
+# ============================================================
+
+description: 一句话说明该预设覆盖的组织与细胞类型
+tissue: unknown              # 组织名（如 peripheral blood / liver / brain）
+species: human               # 必须与所在文件夹一致
+source: 出处（如 PanglaoDB / 某文献 DOI / 人工核查自某汇总）
+version: 2026-08-21          # 更新日期
+
+celltypes:
+  "CellType Name":
+    markers:
+      tier1: [GENE1, GENE2]    # 公认经典 marker
+      tier2: [GENE3]           # 辅助 marker（可选）
+    negative: [GENE4]          # 阴性 marker（可选）
+    aliases: ["别名1", "别名2"] # 文献同义名（可选）

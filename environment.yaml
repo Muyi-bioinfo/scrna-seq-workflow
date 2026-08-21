@@ -1,0 +1,38 @@
+# scrna — scRNA-seq 分析环境（R 4.5 + Seurat v5）
+#
+# 创建环境：
+#   mamba env create -f environment.yaml
+#   mamba activate scrna
+#
+# ⚠️ 以下包不在 conda 渠道，创建环境后需从 GitHub 安装（详见 README「环境」一节）：
+#   SeuratWrappers 必需（整合分析）: remotes::install_github("satijalab/seurat-wrappers")
+#   CellChat       必需（08 细胞通讯）: remotes::install_github("jinworks/CellChat")
+#                    （R 4.5 源码编译踩坑见 docs/03_r_package_compile.md）
+#   presto         可选（FindAllMarkers 加速，Seurat 自动检测）
+#                    : remotes::install_github("immunogenomics/presto")
+#   scCustomize    可选（教学脚本绘图用）: remotes::install_github("samuel-marsh/scCustomize")
+#
+# Python 版（scanpy 平行管线）规划中，不包含在本文件。
+
+name: scrna
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  # ===== 核心（版本 = 本项目实测验证的组合，勿随意升级）=====
+  - r-base=4.5.3
+  - r-seurat=5.5.1
+  - r-seuratobject=5.4.0
+  - r-monocle3=1.4.27
+  # ===== 流程必需 =====
+  - r-harmony        # 多样本整合去批次
+  - r-yaml           # config 读取
+  - r-dplyr
+  - r-tidyr
+  - r-ggplot2
+  - r-patchwork      # 图片拼图
+  - r-remotes        # install_github（安装上面的 GitHub 包用）
+  - bioconductor-scdblfinder     # 双细胞检测
+  - bioconductor-clusterprofiler # 富集分析（GSEA）
+  - bioconductor-enrichplot
+  - bioconductor-org.hs.eg.db    # 人类基因注释数据库

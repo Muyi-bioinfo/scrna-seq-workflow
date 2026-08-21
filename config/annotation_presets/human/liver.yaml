@@ -1,0 +1,53 @@
+# ============================================================
+# human/liver — 人肝脏主要细胞类型 marker 预设
+# ============================================================
+
+description: 人肝脏主要细胞类型 marker（实质细胞 + 免疫 + 基质）
+tissue: liver
+species: human
+source: 人工核查自《单细胞分析中常见marker基因汇总》（肝脏表）
+        + 修正记录：F4/80 为人鼠通用名（人源 ADGRE1）；剔 EBF1（B 细胞 TF，非内皮）
+version: 2026-08-21
+
+celltypes:
+  "Hepatocyte":
+    markers:
+      tier1: [ALB, HNF4A, ASGR1, CYP2E1]
+      tier2: [AFP, APOC3, FABP1, APOA1]
+    aliases: ["肝细胞"]
+
+  "Cholangiocyte":
+    markers:
+      tier1: [KRT7, KRT19, SOX9, EPCAM]
+      tier2: [FXYD2, TM4SF4, ANXA4]
+    aliases: ["胆管细胞", "Bile duct"]
+
+  "Kupffer cell":
+    markers:
+      tier1: [CD163, MRC1, CD68]
+      tier2: [ADGRE1]
+    aliases: ["Kupffer", "KC"]
+
+  "Liver Macrophage":
+    markers:
+      tier1: [ADGRE1, CD14, FCGR3A]
+      tier2: [CD163, CD68]
+    aliases: ["Macrophage", "巨噬细胞"]
+
+  "Liver Endothelial":
+    markers:
+      tier1: [CLDN5, PECAM1, VWF]
+      tier2: [ABCB1]
+    aliases: ["Endothelial", "内皮细胞"]
+
+  "Hepatic stellate":
+    markers:
+      tier1: [PDGFRB, ACTA2, COL1A1]
+      tier2: [GFAP]
+    aliases: ["HSC", "星状细胞"]
+
+  "Plasma B":
+    markers:
+      tier1: [SDC1, CD19, MS4A1, CD27, CD38]
+      tier2: [IRF4]
+    aliases: ["Plasma cell", "浆细胞"]

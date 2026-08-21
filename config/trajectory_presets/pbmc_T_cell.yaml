@@ -1,0 +1,18 @@
+###############################################################################
+### 轨迹预设：PBMC T 细胞谱系
+###
+### 适用：PBMC / 外周血 / 组织浸润免疫的 T 细胞激活轨迹分析
+### 依据：Szabo et al. 2019, Nat Commun（COVID-19 患者 PBMC T 细胞轨迹）
+###       T 细胞从 naive 经激活形成连续分化状态，naive T 是共同起点
+### 写作清单见同目录 README.md
+###############################################################################
+
+description: "T 细胞谱系：naive → memory → activated 的连续激活分化轨迹"
+root_celltype: CD4 Naive T        # 起点：naive T 是激活过程的共同祖先状态
+subset_celltypes:
+  - CD4 Naive T
+  - CD4 Memory T
+  - T activated
+  - CD8 T
+  # 部分研究把 NK 纳入共同淋巴谱系一起分析，需要时取消注释：
+  # - NK

@@ -1,0 +1,53 @@
+# ============================================================
+# human/heart — 人心脏主要细胞类型 marker 预设
+# ============================================================
+
+description: 人心脏主要细胞类型 marker（心肌 + 免疫 + 基质）
+tissue: heart
+species: human
+source: 人工核查自《单细胞分析中常见marker基因汇总》（心脏表）
+        + 修正记录：剔 Ly6c2（小鼠特有）；Myolb→MYO1B；基因符号转人源大写
+version: 2026-08-21
+
+celltypes:
+  "Cardiomyocyte":
+    markers:
+      tier1: [TTN, MYH7, TNNT2]
+      tier2: [MYH6]
+    aliases: ["心肌细胞", "CM"]
+
+  "Heart Fibroblast":
+    markers:
+      tier1: [DCN, GSN, LUM, COL1A2]
+      tier2: [FBLN1]
+    aliases: ["Fibroblast", "成纤维细胞"]
+
+  "Smooth muscle cell":
+    markers:
+      tier1: [ACTA2, MYH11, CALD1, RGS5]
+      tier2: [MYO1B]
+    aliases: ["SMC", "平滑肌细胞"]
+
+  "Heart Endothelial":
+    markers:
+      tier1: [PECAM1, VWF, MGP]
+      tier2: [IFI27]
+    aliases: ["Endothelial", "内皮细胞"]
+
+  "Heart Macrophage":
+    markers:
+      tier1: [C1QA, C1QB, HLA-DRB5]
+      tier2: [APOC1]
+    aliases: ["Macrophage", "巨噬细胞"]
+
+  "Heart Monocyte":
+    markers:
+      tier1: [SPN, CD300E]
+      tier2: [FCGR3A, CD14]
+    aliases: ["Monocyte", "单核细胞"]
+
+  "Heart Neutrophil":
+    markers:
+      tier1: [CSF3R, S100A8, CXCL3]
+      tier2: []
+    aliases: ["Neutrophil", "中性粒细胞"]

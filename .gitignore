@@ -1,0 +1,19 @@
+# 数据与结果（体积大，不上传 GitHub；README 中有获取方式说明）
+data/
+output/
+
+# 软链接（指向本地教程数据/成果，每台机器自行重建）
+
+# cellranger 运行产物与日志（output/ 整体已忽略，此处仅提示）
+output/*.log
+
+# R 产物
+*.rds
+*.RData
+.Rhistory
+.RDataTmp
+
+# RStudio / 系统文件
+.Rproj.user/
+.Rproj
+.DS_Store

@@ -170,7 +170,12 @@ cluster_cells <- function(scobj, reduction, dims, resolution,
 
   scobj <- RunUMAP(scobj, reduction = reduction, dims = dims, reduction.name = "umap")
   scobj <- FindNeighbors(scobj, reduction = reduction, dims = dims)   # KNN → SNN 图
-  scobj <- FindClusters(scobj, resolution = resolution)               # resolution 越大分群越细
+  # ⚠️ 可复现性：set.seed 覆盖 UMAP 等 R 侧随机数；FindClusters 显式传 random.seed
+  #   （默认 0 = 用 C 侧 srand 初始流，会话中其他 C 调用可能改变它）。同一输入
+  #   跑多少次编号都一样——但上游输入（QC/预处理/嵌入）变了，编号仍会重排，
+  #   所以 cluster_map 必须配合 03 的映射证据校验（check_mapping_evidence）使用
+  set.seed(123)
+  scobj <- FindClusters(scobj, resolution = resolution, random.seed = 42)   # resolution 越大分群越细
 
   save_fig(DimPlot(scobj, reduction = "umap", label = TRUE), fig_name, type = "dimplot")
   message("-- 分群数: ", length(unique(Idents(scobj))))
@@ -352,4 +357,94 @@ check_annotation_names <- function(cluster_map, preset) {
     }
   }
   invisible(NULL)
+}
+
+#' 映射证据校验：cluster_map 的「编号 → 类型」与各群 marker 表达是否互相印证
+#'
+#' 聚类编号是 Louvain 社群发现顺序（任意标签），上游输入变化后编号会整体重排，
+#' cluster_map 若未同步就会贴错群（2026-08-21 run02 事故：0↔1、11↔12 互换）。
+#' 本函数按预设 tier1 marker 的表达给每个群打分（negative marker 作扣分项）：
+#' 映射类型若不是该群得分最高的类型，warning 提示复核——编号重排在此暴露，
+#' 而不是等人工看 UMAP 才发现。同时写出证据表 CSV（每群 top3 候选类型与得分）。
+#'
+#' @param scobj       Seurat 对象（须含 seurat_clusters 列）
+#' @param cluster_map 命名向量（分群编号 → 细胞类型名），来自 cfg$annotate$cluster_map
+#' @param preset      load_annotation_preset() 的返回值
+#' @param step_dir    步骤输出目录（证据表 CSV 写入这里）
+check_mapping_evidence <- function(scobj, cluster_map, preset, step_dir) {
+  celltypes <- preset$celltypes
+  if (is.null(celltypes) || length(celltypes) == 0) return(invisible(NULL))
+
+  # 别名 → 标准名（与 check_annotation_names 同一解析规则）
+  alias_map <- character(0)
+  for (nm in names(celltypes)) {
+    aliases <- celltypes[[nm]]$aliases
+    if (!is.null(aliases) && length(aliases) > 0) {
+      for (al in aliases) alias_map[al] <- nm
+    }
+  }
+  resolve <- function(x) if (x %in% names(alias_map)) unname(alias_map[[x]]) else x
+
+  # 打分：tier1 平均表达（data 层）的跨群 z-score 均值，negative marker 作扣分项。
+  # ① layer="data" 显式指定：Seurat 5.5 的 AverageExpression 默认用 counts，
+  #    高表达基因（HBB 等）以原始计数主导均值，跨基因不可比
+  # ② z-score 后基因间可比：HBB 在红系群再高也只贡献约 3σ，不会淹没其他 marker
+  # ③ 基因先与数据求交集（GEO 矩阵缺基因时不会假阳性）；tier1 全缺失返回 NA
+  tier_genes <- unique(unlist(lapply(celltypes, function(x) x$markers$tier1)))
+  Idents(scobj) <- "seurat_clusters"
+  # 只传数据里存在的基因：缺失基因（GEO 矩阵过滤）不触发 AverageExpression 的 warning
+  avg <- AverageExpression(scobj, features = intersect(tier_genes, rownames(scobj)),
+                           layer = "data")$RNA
+  avg <- avg[apply(avg, 1, stats::sd) > 0, , drop = FALSE]   # 全群无差异的基因 z-score 无定义
+  z <- t(scale(t(avg)))
+  score_type <- function(ct_name, col) {
+    ct <- celltypes[[ct_name]]
+    pos <- intersect(ct$markers$tier1, rownames(z))
+    if (length(pos) == 0) return(NA_real_)
+    s <- mean(z[pos, col])
+    neg <- intersect(ct$negative, rownames(z))     # negative 字段可缺省
+    if (length(neg) > 0) s <- s - mean(z[neg, col])
+    s
+  }
+
+  # AverageExpression 的数字 ident 列名前会补 g（g0, g1, ...）
+  col_for <- function(cl) paste0("g", cl)
+
+  evidence <- data.frame()
+  for (cl in names(cluster_map)) {
+    col <- col_for(cl)
+    if (!col %in% colnames(avg)) next   # 该编号不在对象中（03 另有 warning）
+    mapped <- resolve(as.character(cluster_map[[cl]]))
+    scores <- sort(sapply(names(celltypes), score_type, col = col), decreasing = TRUE)
+    scores <- scores[!is.na(scores)]
+    top3 <- head(scores, 3)
+    evidence <- rbind(evidence, data.frame(
+      cluster = cl, mapped_type = mapped,
+      top1 = if (length(top3) > 0) names(top3)[1] else NA,
+      score1 = if (length(top3) > 0) round(top3[1], 1) else NA,
+      top2 = if (length(top3) > 1) names(top3)[2] else NA,
+      score2 = if (length(top3) > 1) round(top3[2], 1) else NA,
+      top3 = if (length(top3) > 2) names(top3)[3] else NA,
+      score3 = if (length(top3) > 2) round(top3[3], 1) else NA))
+    # 报警规则（三条件同时满足才 warning，避免同一谱系内近亲类型误报）：
+    # ① 映射类型不是最高分 ② 分差 > 0.5（z 单位，谱系级贴错的差距通常在 1 以上）
+    # ③ 两类型 tier1 无交集（naive vs memory T、B vs activated B 等共享 marker 的近亲不算）
+    if (length(top3) > 0 && mapped != names(top3)[1] &&
+        mapped %in% names(celltypes) && mapped %in% names(scores)) {
+      gap <- top3[1] - scores[[mapped]]
+      shared_tier1 <- length(intersect(
+        intersect(celltypes[[mapped]]$markers$tier1, rownames(z)),
+        intersect(celltypes[[names(top3)[1]]]$markers$tier1, rownames(z)))) > 0
+      if (!is.na(gap) && gap > 0.5 && !shared_tier1) {
+        warning("映射证据不符：群 ", cl, " 标为 \"", mapped, "\"，但 marker 得分最高的是 \"",
+                names(top3)[1], "\"（", round(top3[1], 1), " vs ", round(scores[[mapped]], 1),
+                "）——聚类编号可能已重排，请复核 cluster_map")
+      }
+    }
+  }
+  if (!dir.exists(step_dir)) dir.create(step_dir, recursive = TRUE)
+  write.csv(evidence, file = file.path(step_dir, "annotation_evidence.csv"), row.names = FALSE)
+  message("-- 映射证据表: ", file.path(step_dir, "annotation_evidence.csv"),
+          "（每群 top3 候选类型与得分，对照 dotplot_markers_by_cluster.pdf 复核）")
+  invisible(evidence)
 }

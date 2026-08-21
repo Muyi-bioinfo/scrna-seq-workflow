@@ -77,6 +77,9 @@ Idents(scobj) <- "seurat_clusters"
 cluster_map <- unlist(cfg$annotate$cluster_map)   # yaml 的 map 结构 → 命名向量
 # 类型名 vs 预设一致性（别名命中只提示，未知名才 warning）
 check_annotation_names(cluster_map, preset)
+# 映射证据校验：机器按 marker 打分复查每条编号映射（编号重排后贴错群在此暴露），
+# 证据表写 annotation_evidence.csv 供人工对照复核
+check_mapping_evidence(scobj, cluster_map, preset, step_dir)
 # 双向检查：① config 写了对象中不存在的群编号（调低 resolution 后常见）
 if (!all(names(cluster_map) %in% levels(Idents(scobj)))) {
   warning("config 中 cluster_map 的群编号与对象分群不完全一致，请检查")

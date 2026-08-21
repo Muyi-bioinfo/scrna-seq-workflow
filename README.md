@@ -120,6 +120,7 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 | top marker 不含经典 marker | v5 logFC 公式变化，低表达基因 logFC 虚高 | `annotate$marker_pct` 预筛选后再排序（默认 0.5） |
 | GSEA 结果不可复现 | GSEA 用随机置换算 p 值 | `set.seed(123)` |
 | 单样本/多样本注释映射混用 | 不同数据集分群数和细胞类型不同 | 配置 profile 分离：config.yaml / config.multi.yaml |
+| 重跑后 cluster_map 贴错群（如 CD14 Mono 与 naive T 互换） | 聚类编号是 Louvain 社群发现顺序（任意标签），上游脚本/参数/环境一改，编号整体重排而群本身不变（2026-08-21 run02 事故） | ① 03 的 `check_mapping_evidence()` 机器校验：贴错群会 warning + 证据表 `annotation_evidence.csv` ② 聚类链路已固定种子（`cluster_cells()` 内 set.seed + `random.seed=42`），同输入必同编号 ③ 验证性重跑换 batch 名保留旧批次对照 |
 | monocle3 `preprocess_cds` 段错误 | irlba fastpath + OpenBLAS 多线程竞态（实测 r-irlba 2.3.7 + OpenBLAS 0.3.33） | run_pipeline.sh 对 07 步骤单独 `OPENBLAS_NUM_THREADS=1`（R 内 `Sys.setenv` 无效，必须 shell 层） |
 | `order_cells` 报 "root_pr_nodes or root_cells must be provided" | Rscript 非交互模式无法弹窗选根（RStudio 交互才会弹） | 谱系预设显式指定根（config/trajectory_presets/） |
 | 全细胞混跑轨迹 30% 细胞伪时间 Inf | 异构细胞类型间不存在连续轨迹，图不连通 | 谱系预设子集（如仅 T 细胞），run02 验证 Inf=0 |

@@ -80,6 +80,12 @@ check_annotation_names(cluster_map, preset)
 # 映射证据校验：机器按 marker 打分复查每条编号映射（编号重排后贴错群在此暴露），
 # 证据表写 annotation_evidence.csv 供人工对照复核
 check_mapping_evidence(scobj, cluster_map, preset, step_dir)
+# 新数据探索模式：cluster_map 为空时，证据表已按群给出 top3 候选（机器建议注释），
+# 对照 dotplot 确认后填入 config 再重跑——空映射不允许静默通过（会产出全 NA 的 celltype）
+if (length(cluster_map) == 0) {
+  stop("config 的 annotate$cluster_map 为空：请对照 03_annotate/annotation_evidence.csv 的 top1 建议",
+       "与 figures/dotplot_markers_by_cluster.pdf 填写映射后重跑 03")
+}
 # 双向检查：① config 写了对象中不存在的群编号（调低 resolution 后常见）
 if (!all(names(cluster_map) %in% levels(Idents(scobj)))) {
   warning("config 中 cluster_map 的群编号与对象分群不完全一致，请检查")

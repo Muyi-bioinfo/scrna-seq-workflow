@@ -367,6 +367,11 @@ check_annotation_names <- function(cluster_map, preset) {
 #' 映射类型若不是该群得分最高的类型，warning 提示复核——编号重排在此暴露，
 #' 而不是等人工看 UMAP 才发现。同时写出证据表 CSV（每群 top3 候选类型与得分）。
 #'
+#' 两种用法：
+#' ① 校验模式（cluster_map 已填）：每条映射 vs 机器打分对答案，贴错报警
+#' ② 建议模式（cluster_map 为空/不全，新数据一无所知）：遍历对象全部群，
+#'    CSV 的 top1 列即机器建议注释，照此填 cluster_map 后重跑（03 会 stop 拦截空映射）
+#'
 #' @param scobj       Seurat 对象（须含 seurat_clusters 列）
 #' @param cluster_map 命名向量（分群编号 → 细胞类型名），来自 cfg$annotate$cluster_map
 #' @param preset      load_annotation_preset() 的返回值
@@ -411,10 +416,19 @@ check_mapping_evidence <- function(scobj, cluster_map, preset, step_dir) {
   col_for <- function(cl) paste0("g", cl)
 
   evidence <- data.frame()
-  for (cl in names(cluster_map)) {
+  # 建议模式：遍历对象全部群（而非只遍历 cluster_map 里的群）——map 为空/不全时，
+  # 未映射的群照样进 CSV（mapped_type 为 NA），top1 即机器建议注释
+  # 按数值序排（levels 是字符串排序 0,1,10,11,12,2,...），CSV 行序直观
+  clusters_all <- levels(Idents(scobj))
+  clusters_all <- clusters_all[order(as.numeric(clusters_all))]
+  for (cl in clusters_all) {
     col <- col_for(cl)
-    if (!col %in% colnames(avg)) next   # 该编号不在对象中（03 另有 warning）
-    mapped <- resolve(as.character(cluster_map[[cl]]))
+    if (!col %in% colnames(avg)) next   # 该编号不在打分表里（对象异常状态）
+    mapped <- if (cl %in% names(cluster_map)) {
+      resolve(as.character(cluster_map[[cl]]))
+    } else {
+      NA_character_   # 未映射群：不参与报警（mapped %in% names(celltypes) 为 FALSE 短路）
+    }
     scores <- sort(sapply(names(celltypes), score_type, col = col), decreasing = TRUE)
     scores <- scores[!is.na(scores)]
     top3 <- head(scores, 3)

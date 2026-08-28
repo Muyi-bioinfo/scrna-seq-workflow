@@ -19,9 +19,6 @@ suppressPackageStartupMessages({
 # 图片保存工具（cairo_pdf 封装，支持中文；图目录受 options(fig_outdir) 控制）
 source("utils/save_fig.R")
 
-# 项目根目录（脚本都从项目根目录运行：Rscript R/01_xxx.R）
-PROJECT_ROOT <- normalizePath(".")
-
 # 配置文件：默认 config/config.yaml（单样本），多样本用 config/config.multi.yaml
 # 可由环境变量 CONFIG_FILE 覆盖（run_pipeline.sh --mode multi 会自动切换）
 CONFIG_FILE  <- Sys.getenv("CONFIG_FILE", "config/config.yaml")
@@ -116,6 +113,9 @@ detect_doublets <- function(scobj) {
          "或把 config 的 qc$doublet_enable 设为 false")
   }
   log_step(paste("双细胞检测（scDblFinder）| 细胞数:", ncol(scobj)))
+  # ⚠️ 可复现性：scDblFinder 靠随机模拟人工双细胞做分类，不设种子则每次运行
+  #   判定略有出入（run02/run03 实测双细胞数差 113，下游全流程随之漂移）
+  set.seed(123)
   sce <- as.SingleCellExperiment(scobj)          # Seurat → SCE（用 counts 层）
   sce <- scDblFinder::scDblFinder(sce)           # 模拟双细胞 + 分类
   scobj[["doublet"]] <- sce$scDblFinder.class    # 结果写入 metadata

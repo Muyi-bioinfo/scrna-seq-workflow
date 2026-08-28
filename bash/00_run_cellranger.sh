@@ -31,6 +31,11 @@ EXPECT_CELLS=$(cr_get expect_cells)
 CREATE_BAM=$(cr_get create_bam | tr '[:upper:]' '[:lower:]')
 LOCALCORES=$(cr_get localcores)
 LOCALMEM=$(cr_get localmem)
+# expect_cells 留空时不传该 flag（空参数会被 cellranger 拒绝并报晦涩错误）
+CR_ARGS=()
+if [[ -n "$EXPECT_CELLS" ]]; then
+  CR_ARGS+=(--expect-cells="$EXPECT_CELLS")
+fi
 [[ -d "$TRANSCRIPTOME" ]] || {
   echo "✘ 参考基因组不存在: $TRANSCRIPTOME（下载解压到 data/reference/refdata/ 后在 cellranger.yaml 里填）"
   exit 1
@@ -42,7 +47,12 @@ TRANSCRIPTOME=$(realpath "$TRANSCRIPTOME")
 command -v cellranger >/dev/null || { echo "✘ 找不到 cellranger，请确认已加入 PATH"; exit 1; }
 
 # ---- 输出目录（批次归档 + 配置快照，可追溯）----
-OUTDIR="output/$BATCH/00_cellranger"
+# 结果根目录与 R 侧 batch_dir() 同源（主 config 的 dirs$base），不硬编码 output/
+BASE=$(awk '/^dirs:/ {in_sec=1; next}
+            in_sec && /^[^[:space:]#]/ {exit}
+            in_sec && $1 == "base:" {print $2; exit}' "$MAIN_CONFIG")
+[[ -n "$BASE" ]] || BASE="output"
+OUTDIR="$BASE/$BATCH/00_cellranger"
 mkdir -p "$OUTDIR"
 OUTDIR=$(realpath "$OUTDIR")   # ⚠️ 同上：logfile 重定向在 cd 之后的子 shell 中，相对路径会重复拼接
 cp "$CR_CONFIG" "$OUTDIR/cellranger_config_used.yaml"
@@ -66,7 +76,7 @@ tail -n +2 "$SAMPLE_SHEET" | tr -d '\r' | while IFS=',' read -r sample group fas
       --id="$sample" \
       --transcriptome="$TRANSCRIPTOME" \
       --fastqs="$fastqs" \
-      --expect-cells="$EXPECT_CELLS" \
+      "${CR_ARGS[@]}" \
       --create-bam="$CREATE_BAM" \
       --localcores="$LOCALCORES" \
       --localmem="$LOCALMEM" \

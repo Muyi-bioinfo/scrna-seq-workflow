@@ -10,10 +10,11 @@
 
 # ---------- 项目与目录 ----------
 mode: multi               # 分析模式：single（单样本）/ multi（多样本）
-batch: run02              # 运行批次：本次运行的结果与日志归档到 output/<batch>/ 和 logs/<batch>/
+batch: run03              # 运行批次：本次运行的结果与日志归档到 output/<batch>/ 和 logs/<batch>/
                           # 同批次名重跑 = 断点续跑；换批次名 = 全新运行（旧批次结果保留）
                           # 验证改动/改脚本后的重跑建议换新批次名，旧批次留作对照基线
-                          # 不同模式用不同批次名（run01 是单样本批次，run02 是多样本批次）
+                          # 不同模式用不同批次名（run01 是单样本批次，run02/run03 是多样本批次；
+                          # run03 是 2026-08-28 第二批修复后的全流程验证批次）
 
 project:
   name: pbmc_stim_ctrl    # 项目名（写入 Seurat 对象 orig.ident）

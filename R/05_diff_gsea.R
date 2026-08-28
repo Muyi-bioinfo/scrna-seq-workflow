@@ -20,9 +20,13 @@ library(ggplot2)   # theme()/facet_grid() 等绘图函数
 
 scobj <- read_prev("03_annotate", "seurat_annotated.rds")
 group_col <- cfg$multi_group$group_col
+# celltype.stim 的编码分隔符：细胞类型名可能含下划线（自定义注释如 T_reg），
+# 用 "_" 编码再按 "_" 解码会错位，故用类型名/组名里不会出现的 "^^"
+STIM_SEP <- "^^"
+STIM_SEP_RE <- "\\^\\^"   # separate() 的 sep 按正则解析，需转义
 
 # ---- 策略一：群水平富集（compareCluster）----
-scobj[["celltype.stim"]] <- paste(scobj$celltype, scobj[[]][[group_col]], sep = "_")
+scobj[["celltype.stim"]] <- paste(scobj$celltype, scobj[[]][[group_col]], sep = STIM_SEP)
 Idents(scobj) <- "celltype.stim"
 
 sce_markers <- FindAllMarkers(object = scobj, only.pos = TRUE,
@@ -41,7 +45,7 @@ library(orgdb, character.only = TRUE)
 
 markers <- sce_markers %>%
   filter(p_val_adj < 0.001) %>%
-  separate(cluster, into = c("celltype", "group"), sep = "_", remove = FALSE)
+  separate(cluster, into = c("celltype", "group"), sep = STIM_SEP_RE, remove = FALSE)
 gid <- bitr(unique(markers$gene), "SYMBOL", "ENTREZID", OrgDb = orgdb)
 colnames(gid)[1] <- "gene"
 markers <- merge(markers, gid, by = "gene")
@@ -76,8 +80,13 @@ if (!is.null(ident_compare) && nzchar(ident_compare)) {
     groups <- c(cfg$diff_gsea$ident1_group, setdiff(groups, cfg$diff_gsea$ident1_group))
   }
   if (length(groups) >= 2) {
-    ident1 <- paste0(ident_compare, "_", groups[1])
-    ident2 <- paste0(ident_compare, "_", groups[2])
+    ident1 <- paste0(ident_compare, STIM_SEP, groups[1])
+    ident2 <- paste0(ident_compare, STIM_SEP, groups[2])
+    # 三组以上设计：策略二只做一次两两比较，多余分组静默丢弃会误导读图——显式提醒
+    if (length(groups) > 2) {
+      warning("分组多于 2 个（", paste(groups, collapse = ", "), "）：策略二仅比较 ",
+              ident1, " vs ", ident2, "，其余分组被忽略；多组两两比较请改用策略一或拆分 config 重跑")
+    }
     message("-- 比较: ", ident1, " vs ", ident2)
 
     # 差异基因：logfc.threshold = 0 保留全部基因用于 GSEA 排序
@@ -98,8 +107,15 @@ if (!is.null(ident_compare) && nzchar(ident_compare)) {
         next
       }
       y <- GSEA(geneList, TERM2GENE = read.gmt(gmt))
+      # 零结果保护：gmt 与数据基因名不匹配（如鼠基因名跑人 gmt）时 GSEA 返回空表，
+      # 后续 dotplot 会报晦涩错误并中断脚本（主结果已产出但 .done 不落盘，重跑代价大）
+      y_df <- as.data.frame(y)
+      if (nrow(y_df) == 0) {
+        warning(nm, " 基因集 GSEA 无任何富集结果（检查 gmt 物种与格式），跳过作图: ", gmt)
+        next
+      }
       # ⚠️ 正负两个方向都存在时才按 .sign 拆分 facet（单向结果 facet 会报错中断整个脚本）
-      if (length(unique(as.data.frame(y)$.sign)) >= 2) {
+      if (length(unique(y_df$.sign)) >= 2) {
         save_fig(dotplot(y, showCategory = 12, split = ".sign") + facet_grid(~.sign),
                  paste0("gsea_", nm, "_dotplot"), type = "gsea")
       } else {

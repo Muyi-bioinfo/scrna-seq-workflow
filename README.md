@@ -7,7 +7,7 @@
 ## 项目故事（怎么学出来的）
 
 1. **跟教程学**：基于 Seurat v4 公开教程，从单样本基础分析到多样本整合分析，共 10 个教学脚本（原始学习轨迹保留在本机，未随本仓库上传）
-2. **适配新版本**：教程基于 Seurat v4，实际环境是 Seurat v5 + Linux，逐行改写并踩坑记录（v4/v5 差异见 [docs/Seurat_v4_vs_v5.md](docs/Seurat_v4_vs_v5.md)）
+2. **适配新版本**：教程基于 Seurat v4，实际环境是 Seurat v5 + Linux，逐行改写，v4/v5 差异的处理沉淀在各脚本注释与下方[关键踩坑记录](#关键踩坑记录)
 3. **补齐上游**：教程从表达矩阵开始，自学补充了 cellranger 定量部分（本机已真实跑通 tiny 测试数据，产出位于 `output/run01/00_cellranger/tiny_demo/`）
 4. **扩展学习**：在主线之外自学了多种整合方法（RPCA/FastMNN/scVI/Liger）和基因集打分（AddModuleScore/UCell/AUCell）
 5. **工程化整合**：调研 GitHub 主流项目结构后，把流程重构为**分阶段脚本 + config 集中配置 + 断点续跑 runner**（脚本粒度参考 hossainlab/sc-workflow：按分析阶段打包，而非每个操作一个脚本）

@@ -88,9 +88,10 @@ cellranger count \
 
 ```bash
 # output/run01/00_cellranger/count.log 记录了完整执行过程
+# （transcriptome/fastqs 为占位路径，tiny 测试数据随 cellranger 安装包附带，按实际安装位置填写）
 cellranger count --id=tiny_demo \
-  --transcriptome=/home/yangcl/Software/cellranger-9.0.1/external/cellranger_tiny_ref \
-  --fastqs=/home/yangcl/Software/cellranger-9.0.1/external/cellranger_tiny_fastq \
+  --transcriptome=/path/to/cellranger-9.0.1/external/cellranger_tiny_ref \
+  --fastqs=/path/to/cellranger-9.0.1/external/cellranger_tiny_fastq \
   --create-bam=false --localcores=16 --localmem=2
 ```
 

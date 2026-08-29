@@ -1,4 +1,4 @@
-# scrna-seq-pipeline
+# scrna-seq-workflow
 
 English | [简体中文](README_CN.md)
 
@@ -17,7 +17,7 @@ English | [简体中文](README_CN.md)
 ## Repository layout
 
 ```
-scrna-seq-pipeline/
+scrna-seq-workflow/
 ├── README.md                    # Project overview (this file, English)
 ├── README_CN.md                 # Chinese version of the overview
 ├── environment.yaml             # mamba environment spec (rebuild the scrna env in one command)

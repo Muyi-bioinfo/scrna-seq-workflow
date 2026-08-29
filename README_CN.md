@@ -1,4 +1,4 @@
-# scrna-seq-pipeline
+# scrna-seq-workflow
 
 [English](README.md) | 简体中文
 
@@ -17,7 +17,7 @@
 ## 目录结构
 
 ```
-scrna-seq-pipeline/
+scrna-seq-workflow/
 ├── README.md                    # 英文版项目总览
 ├── README_CN.md                 # 中文版项目总览（本文件）
 ├── environment.yaml             # mamba 环境定义（一键重建 scrna 环境）

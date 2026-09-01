@@ -7,8 +7,8 @@
 ### ⚠️ 只吃 RNA assay 的 raw counts（DESeq2 负二项模型不吃标准化/SCT/Harmony 产物）。
 ###
 ### 输入：output/<batch>/03_annotate/seurat_annotated.rds（sample_id 由 01 写入）
-### 输出：output/<batch>/06_pseudobulk_de/ —— 逐类型 DESeq2 全基因结果/显著表/
-###      volcano/MA/PCA；顶层 summary_degs.csv 含与单细胞口径的同对比对照
+### 输出：output/<batch>/06_pseudobulk_de/ —— by_celltype/<type>/（全基因结果/显著表）
+###      + figures/<type>/（volcano/MA/PCA）；顶层 summary_degs.csv 含单细胞口径对照
 ###############################################################################
 
 source("utils/utils.R")
@@ -44,10 +44,8 @@ test_grp       <- pb$test_group
 ref_grp        <- pb$reference_group
 lfc_shrink     <- isTRUE(get_cfg(pb$lfc_shrink, TRUE))
 run_gsea       <- isTRUE(get_cfg(pb$run_gsea, FALSE))
+target_ct      <- get_cfg(pb$target_celltypes, NULL)   # 白名单：NULL/[] = 全部分析
 exclude_ct     <- get_cfg(pb$exclude_celltypes, NULL)
-if (!identical(get_cfg(pb$method, "DESeq2"), "DESeq2")) {
-  stop("pseudobulk$method 目前仅支持 DESeq2，收到: ", pb$method)
-}
 if (is.null(test_grp) || is.null(ref_grp)) {
   stop("config 需显式指定 pseudobulk$test_group 与 pseudobulk$reference_group")
 }
@@ -93,7 +91,17 @@ if (!is.null(exclude_ct) && length(exclude_ct) > 0) {
             paste(exclude_ct, collapse = ", "))
   }
 }
-message("-- 聚合用细胞: ", nrow(cell_df), "/", n_before, "（剔除无供者信息与排除类型）")
+# 白名单：非空时只保留目标类型（与 exclude 叠加 = 先白后黑；留空 = 全部）
+if (!is.null(target_ct) && length(target_ct) > 0) {
+  miss <- setdiff(target_ct, unique(cell_df$celltype))
+  if (length(miss) > 0) {
+    warning("target_celltypes 与数据中的注释名不匹配（死字符串？）: ",
+            paste(miss, collapse = ", "))
+  }
+  cell_df <- cell_df[cell_df$celltype %in% target_ct, , drop = FALSE]
+  message("-- 白名单生效，仅分析: ", paste(sort(unique(cell_df$celltype)), collapse = ", "))
+}
+message("-- 聚合用细胞: ", nrow(cell_df), "/", n_before, "（剔除无供者信息、黑/白名单过滤）")
 
 # 聚合走主流接口（Seurat de_vignette 的 pseudobulk 做法）：AggregateExpression 求和，
 # return.seurat = TRUE 时 group.by 列自动进 meta.data——不解析细胞名、无矩阵方向问题
@@ -227,8 +235,10 @@ if (any(duplicated(ct_dirs))) stop("细胞类型名安全化后重名，无法�
                                    paste(unique(ct_dirs[duplicated(ct_dirs)]), collapse = ", "))
 
 summary_rows <- list()
+# 实际分析集合：cell_df 已含黑/白名单过滤（用于 summary 的 skip_reason 区分）
+analyzed_ct <- unique(cell_df$celltype)
 for (ct in cts_all) {
-  ct_dir <- file.path(step_dir, ct_dirs[[ct]])
+  ct_dir <- file.path(step_dir, "by_celltype", ct_dirs[[ct]])   # 表（数据）
   sub_meta <- droplevels(pb_meta[pb_meta$celltype == ct, , drop = FALSE])
   row <- data.frame(celltype = ct, skip_reason = NA_character_,
                     design = NA_character_,
@@ -238,11 +248,15 @@ for (ct in cts_all) {
                     n_sig_padj_lfc = NA_integer_, n_up = NA_integer_, n_down = NA_integer_,
                     n_sig_up = NA_integer_,
                     n_sc_up_bh = NA_integer_, n_pb_up_bh = NA_integer_)
-  # 注释里有但聚合后无样本的类型（min_cells 全格不足 / config 剔除）——
-  # 明确记入 summary 而非无声消失
+  # 黑/白名单外的类型与聚合后无样本的类型——明确记入 summary 而非无声消失
+  if (!ct %in% analyzed_ct) {
+    row$skip_reason <- if (!is.null(exclude_ct) && ct %in% exclude_ct) "config 剔除（exclude_celltypes）"
+                       else "非目标类型（config 白名单）"
+    summary_rows[[ct]] <- row
+    next
+  }
   if (!ct %in% pb_meta$celltype) {
-    row$skip_reason <- if (!is.null(exclude_ct) && ct %in% exclude_ct) "config 剔除"
-                       else "min_cells 过滤后无 pseudobulk 样本"
+    row$skip_reason <- "min_cells 过滤后无 pseudobulk 样本"
     summary_rows[[ct]] <- row
     next
   }
@@ -286,11 +300,24 @@ for (ct in cts_all) {
   }
 
   dir.create(ct_dir, recursive = TRUE, showWarnings = FALSE)
-  options(fig_outdir = ct_dir)   # 本类型的图直接落子目录（save_fig 读该 option）
+  # 图统一进 figures/<type>/（管线约定：所有 PDF 在 figures/ 下），表留在 by_celltype/<type>/
+  options(fig_outdir = file.path(step_dir, "figures", ct_dirs[[ct]]))
   cnt <- as.matrix(counts_pb[, sub_meta$pseudobulk_id, drop = FALSE])   # 基因×样本
-  storage.mode(cnt) <- "integer"   # rowsum 产出 double；DESeq2 要整数（避免静默 round 警告）
-  dds <- DESeq2::DESeqDataSetFromMatrix(countData = cnt, colData = sub_meta, design = fml)
-  dds <- DESeq2::DESeq(dds, quiet = TRUE)
+  storage.mode(cnt) <- "integer"   # AggregateExpression 产出 double；DESeq2 要整数
+  # 拟合失败保护：罕见数值问题（如全零/极低计数矩阵）只 warning 跳过本类型，
+  # 不中断整步（参考 hossainlab/sc-workflow 的 tryCatch 模式）
+  dds <- tryCatch({
+    dds_tmp <- DESeq2::DESeqDataSetFromMatrix(countData = cnt, colData = sub_meta, design = fml)
+    DESeq2::DESeq(dds_tmp, quiet = TRUE)
+  }, error = function(e) {
+    warning("类型 ", ct, " 的 DESeq2 拟合失败，跳过: ", conditionMessage(e))
+    NULL
+  })
+  if (is.null(dds)) {
+    row$skip_reason <- "DESeq2 拟合失败"
+    summary_rows[[ct]] <- row
+    next
+  }
   res <- DESeq2::results(dds, contrast = c("condition", test_grp, ref_grp), alpha = padj_cut)
   res_df <- as.data.frame(res)
   res_df$gene <- rownames(res_df)

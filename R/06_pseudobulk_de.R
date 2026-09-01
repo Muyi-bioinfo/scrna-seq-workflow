@@ -1,34 +1,14 @@
 ###############################################################################
 ### 06_pseudobulk_de.R — 模块 9+：pseudobulk 确认性差异分析（sample-aware DESeq2）
 ###
-### 为什么需要它：05 的 FindAllMarkers 把每个细胞当独立统计单元——同一供者的细胞
-### 彼此高度相关，当成独立样本就是伪重复（pseudoreplication），p 值虚小、DEG 数虚高
-### （GSE96583 本质是 Kang 2017 的 8 供者配对数据）。本模块把同类细胞按
-### 生物学样本×处理 聚合成 pseudobulk（统计单元 = sample，不再是 cell），
-### 每个细胞类型独立建一个 DESeq2 负二项模型做组间比较：
-###   05 = 探索层（单细胞 marker/GSEA 定位），06 = 确认层（sample-aware DE）。
-###   与单细胞口径的对照：同对比（STIM vs CTRL）+ 同基因全集 + 同 BH 校正下，
-###   细胞级（伪重复）口径的显著数 ≥ 样本级口径，差量进顶层 summary_degs.csv
+### 05 以细胞为统计单元（伪重复，p 值虚高）；本模块按 样本×细胞类型 聚合原始 counts，
+### 逐类型独立建 DESeq2：同一样本出现在 ≥2 组 → 配对 design ~ sample_id + condition，
+### 否则 ~ condition；batch 可用且未与 condition 混淆时插到最前。
+### ⚠️ 只吃 RNA assay 的 raw counts（DESeq2 负二项模型不吃标准化/SCT/Harmony 产物）。
 ###
-### design 自动判定（配置在 config 的 pseudobulk 段）：
-###   同一 sample（供者）出现在 ≥2 个组 → 配对设计 ~ sample_id + condition
-###   否则（每组独立样本）              → 非配对   ~ condition
-###   batch 列存在且 >1 取值（未与 condition 混淆）→ 插到最前 ~ batch + ...
-###
-### ⚠️ 必须用 RNA assay 的原始 counts（整数 UMI）——DESeq2 的负二项模型只吃 raw
-###    counts，NormalizeData/SCT/Harmony 的产物都不能进这里
-###
-### 输入：output/<batch>/03_annotate/seurat_annotated.rds
-###       （sample_id 列由 01 写入：常规场景 = 样本表每行；合并矩阵场景 =
-###         multi$cell_metadata 按 (group, barcode) join 供者——GSE96583 的供者在
-###         GEO tsne.df 的 ind 列，对象本身不带）
-### 输出：output/<batch>/06_pseudobulk_de/
-###   ├── pseudobulk_cell_counts.tsv   每个 pseudobulk（sample×celltype）的细胞数与去留
-###   ├── pseudobulk_metadata.tsv      进 DESeq2 的 colData（kept 部分）
-###   ├── summary_degs.csv             每类型 DEG 数汇总 + 与 05 的同阈值对照
-###   ├── figures/                     全局样本层 PCA + 05 vs 06 对比条形图
-###   └── <celltype>/                  逐类型：counts rds、metadata、全基因 DESeq2 结果、
-###                                    显著 DEG、volcano/MA/PCA 图、可选 GSEA
+### 输入：output/<batch>/03_annotate/seurat_annotated.rds（sample_id 由 01 写入）
+### 输出：output/<batch>/06_pseudobulk_de/ —— 逐类型 DESeq2 全基因结果/显著表/
+###      volcano/MA/PCA；顶层 summary_degs.csv 含与单细胞口径的同对比对照
 ###############################################################################
 
 source("utils/utils.R")

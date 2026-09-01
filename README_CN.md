@@ -136,6 +136,22 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 下载位置与目录组织：见 [docs/01_pipeline_overview.md](docs/01_pipeline_overview.md) 末尾的数据来源一节。
 注意：GSE96583 的 GEO 提交矩阵被过滤掉了线粒体基因，该数据集的 `percent.mt` 退化为 0（真实 cellranger 输出不受影响）。
 
+### 样本表（多样本模式）
+
+`config/sample_sheet.csv` 是把自有数据接进多样本流程的入口——下游所有比较都从它出发：
+
+| 列 | 消费方 | 作用 |
+|---|---|---|
+| `sample` | 01（orig.ident）、06 默认 `sample_id` | 样本名 = pseudobulk 差异的生物学重复单位 |
+| `group` | 02 整合、04 多组图、05 差异+GSEA、06 的 `condition_col` | **所有下游比较的分组单位**，取值须与 config 的 `pseudobulk$test_group` / `reference_group` 完全一致 |
+| `fastqs` | 00 cellranger | 上游定量输入（与 `matrix` 二选一） |
+| `matrix` | 01 | 10x 矩阵目录/h5（与 `fastqs` 二选一） |
+
+两点提醒：
+
+- `group` 写错**不会报错**，只会静默跑出错误的对比。换数据集后先核对它与 config 的 `test_group`/`reference_group` 一致性
+- 合并矩阵场景（每行是多供者池，如 GSE96583），`sample` 列不再代表生物学重复——配置 `multi$cell_metadata`，01 会按 (group, barcode) join 供者写入 `sample_id`
+
 ## 输出产物
 
 每次运行归档在 `output/<batch>/<step>/` —— 结果 `.rds` + `figures/` + `.done` 断点标记；每个批次还保留各步 `logs/` 与 `config_used.yaml` 参数快照。各步骤产出如下（run03 验证批次的真实文件清单）：

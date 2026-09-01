@@ -78,6 +78,7 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 
 ### 模块 1：数据读入
 
+- **样本表四列分工**（`config/sample_sheet.csv`，多样本模式的入口）：`sample` → orig.ident 与默认 sample_id（pseudobulk 的生物学重复）；`group` → 下游所有比较的分组单位（⚠️ 写错不会报错、会静默跑错对比，须与 config 的 `pseudobulk$test_group`/`reference_group` 一致）；`fastqs`/`matrix` → 数据来源二选一（上游定量/现成矩阵）
 - `Read10X()` 读取 10x 三件套（或 h5），返回稀疏矩阵（dgCMatrix）——**行是基因，列是细胞**
 - `CreateSeuratObject()`：`min.cells`（基因至少在 N 个细胞表达）、`min.features`（细胞至少 N 个基因）——阈值在 `qc:` 段（`min_cells` / `nfeature_min`），与后续质控过滤同源
 - 多样本场景每个样本加 `group` 列（05 整合按它去批次）与 `sample_id` 列（pseudobulk 的生物学重复）：默认 = 样本表每行；合并矩阵场景（每行是"多供者池"，如 GSE96583）用 `multi$cell_metadata` 按 (group, barcode) join 逐细胞元数据覆盖（供者在 GEO tsne.df 的 `ind` 列）

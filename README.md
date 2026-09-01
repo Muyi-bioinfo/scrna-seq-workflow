@@ -140,6 +140,22 @@ Rscript R/02_preprocess_cluster.R   # run a single stage directly (e.g. submit t
 Download locations and directory layout: data-sources section at the end of [docs/01_pipeline_overview.md](docs/01_pipeline_overview.md).
 Note: the GSE96583 GEO submission has mitochondrial genes filtered out, so `percent.mt` degrades to 0 for that dataset (a real cellranger run is unaffected).
 
+### Sample sheet (multi-sample mode)
+
+`config/sample_sheet.csv` is the entry point for plugging your own data into the multi-sample pipeline — every downstream comparison starts from it:
+
+| Column | Consumed by | Role |
+|---|---|---|
+| `sample` | 01 (orig.ident), 06 (default `sample_id`) | sample name = the biological-replicate unit of pseudobulk DE |
+| `group` | 02 integration, 04 group plots, 05 DE+GSEA, 06 (`condition_col`) | the grouping unit of **all downstream comparisons** — values must match `pseudobulk$test_group` / `reference_group` in the config exactly |
+| `fastqs` | 00 cellranger | upstream quantification input (either this or `matrix`) |
+| `matrix` | 01 | 10x matrix directory/h5 (either this or `fastqs`) |
+
+Two things to keep in mind:
+
+- A wrong `group` value does **not** raise an error — it silently produces wrong comparisons. After switching datasets, check the `group` column against `test_group`/`reference_group` in the config first.
+- With pooled matrices (each row is a mix of many donors, e.g. GSE96583), the `sample` column no longer represents biological replicates — configure `multi$cell_metadata` so step 01 joins donors by (group, barcode) into `sample_id`.
+
 ## Outputs
 
 Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/` + a `.done` resume marker; each run also keeps per-step `logs/` and a `config_used.yaml` parameter snapshot. What each step produces (real files from the run03 validation batch):

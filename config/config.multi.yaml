@@ -29,6 +29,13 @@ multi:
                                           # fastqs：该样本 FASTQ 目录（先跑 00_run_cellranger）
                                           # matrix：10x 矩阵目录/h5（cellranger 输出或任何三件套）
                                           # 两者填一个即可；都空则自动找本批次 cellranger 输出
+  # 可选：逐细胞元数据（供者信息）。sample_id（pseudobulk 的生物学重复）默认 = 样本表每行；
+  # 合并矩阵场景下每行是"多供者池"（如 GSE96583：orig.ident 只有 STIM/CTRL 两大池，
+  # 直接当样本用每组只有 1 个 pseudobulk、无 replicate 可拟合），01 读入时按
+  # (group, barcode) join 元数据覆盖 sample_id。常规场景整段留空即可
+  cell_metadata: data/matrices/GSE96583/GSE96583_batch2.total.tsne.df.tsv.gz
+  donor_col: ind                # cell_metadata 中的供者列 → sample_id
+  cell_metadata_group_col: stim # cell_metadata 中的组别列（大小写不敏感，stim ↔ STIM）
 
 # ---------- 模块 2：质控 ----------
 qc:
@@ -108,18 +115,10 @@ diff_gsea:
 # 05 是探索层，本模块是确认层。与单细胞口径的对照：同对比 + 同基因全集 + 同 BH 校正下，
 # 细胞级（伪重复）显著数 ≥ 样本级显著数，差量进 summary_degs.csv
 pseudobulk:
-  sample_col: sample_id         # 生物学重复（供者）列：pseudobulk 聚合与配对 design 的单位
+  sample_col: sample_id         # 生物学重复（供者）列，01 已写入（样本表每行或 multi$cell_metadata join）
   condition_col: group          # 处理/对照分组列
   batch_col: batch              # 批次列（可选）：null 或列缺失/单一取值时自动退出 design
   celltype_col: celltype        # 细胞类型列（逐类型独立建模，不混类型）
-  # ⚠️ GSE96583 的合并矩阵没有 sample_id（orig.ident 只有 STIM/CTRL 两大池，直接当
-  # sample 用每组只有 1 个 pseudobulk，无 replicate 可拟合）。供者编码在作者逐细胞
-  # 元数据（GEO 的 tsne.df）的 ind 列，按 (group, barcode) join 生成——条码在两组间
-  # 重复，必须带 group 匹配；条码 = 对象 cell ID 去掉 merge 加的 "_数字" 后缀。
-  # 有原生 sample_id 列的数据集：cell_metadata 置 null 即可
-  cell_metadata: data/matrices/GSE96583/GSE96583_batch2.total.tsne.df.tsv.gz
-  donor_col: ind                # cell_metadata 中的供者列 → 生成 sample_id
-  method: DESeq2                # v1 仅 DESeq2
   min_cells: 20                 # sample×celltype 至少 N 细胞才成 pseudobulk，低于则丢弃该格
   min_samples_per_group: 2      # 每组至少 N 个 pseudobulk 样本（配对 design 下还须残差 df≥1）
   padj_cutoff: 0.05

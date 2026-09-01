@@ -64,7 +64,7 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 | 6+7 注释+亚群 | `03_annotate.R` | `annotate:`、`subcluster:` | clustered → `seurat_annotated.rds`（+ 亚群 rds） | featureplot_markers、dimplot_annotated、（亚群图） |
 | 8 多组可视化 | `04_multi_group_plot.R` | `multi_group:` | annotated → 仅图 | 比例图、分组 DotPlot、热图 |
 | 9 差异+GSEA | `05_diff_gsea.R` | `diff_gsea:` | annotated → 差异 rds + 图 | compareCluster、GSEA dotplot |
-| 9+ pseudobulk 确认性 DE（样本级） | `06_pseudobulk_de.R` | `pseudobulk:`（供者 join / 配对 design / min 守卫） | annotated → 逐类型 DESeq2 结果 + `summary_degs.csv` | 逐类型 volcano/MA/PCA、全局 pseudobulk PCA、05 vs 06 对比条形图 |
+| 9+ pseudobulk 确认性 DE（样本级） | `06_pseudobulk_de.R` | `pseudobulk:`（配对 design / min 守卫；sample_id 由 01 写入） | annotated → 逐类型 DESeq2 结果 + `summary_degs.csv` | 逐类型 volcano/MA/PCA、全局 pseudobulk PCA、05 vs 06 对比条形图 |
 | A 基因集打分（高级） | `07_gene_set_score.R` | `advanced:` | annotated → `seurat_scored.rds` | 通路打分 FeaturePlot |
 | B 拟时序（高级） | `08_trajectory_analysis.R` | `advanced$trajectory`（preset / reduction / root_celltype） | annotated → `trajectory_cds.rds` + `trajectory_resolved.yaml` 参数快照 | 伪时间轨迹图、细胞类型轨迹图、分组轨迹图 |
 | C 细胞通讯（高级） | `09_cell_communication.R` | `advanced$cellchat` | annotated → 通讯网络结果 | 通讯网络图、通路气泡图、组间差异比较 |
@@ -80,7 +80,7 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 
 - `Read10X()` 读取 10x 三件套（或 h5），返回稀疏矩阵（dgCMatrix）——**行是基因，列是细胞**
 - `CreateSeuratObject()`：`min.cells`（基因至少在 N 个细胞表达）、`min.features`（细胞至少 N 个基因）——阈值在 `qc:` 段（`min_cells` / `nfeature_min`），与后续质控过滤同源
-- 多样本场景每个样本加 `group` 列（05 整合按它去批次）
+- 多样本场景每个样本加 `group` 列（05 整合按它去批次）与 `sample_id` 列（pseudobulk 的生物学重复）：默认 = 样本表每行；合并矩阵场景（每行是"多供者池"，如 GSE96583）用 `multi$cell_metadata` 按 (group, barcode) join 逐细胞元数据覆盖（供者在 GEO tsne.df 的 `ind` 列）
 
 ### 模块 2：质控（QC）
 
@@ -127,7 +127,7 @@ RunUMAP → FindNeighbors（KNN → SNN 图）→ FindClusters（resolution 越�
 
 - **为什么**：模块 9 以细胞为统计单元——同一供者的细胞高度相关，当成独立样本就是**伪重复**（pseudoreplication），p 值虚小、DEG 数虚高。GSE96583 本质是 Kang 2017 的 8 供者配对数据，这是组间差异分析的统计要害
 - **怎么做**：原始 counts 按 供者×处理×细胞类型 聚合成 pseudobulk（`Matrix::rowsum`，**统计单元 = sample，不再是 cell**）→ 每个细胞类型独立建 DESeq2 负二项模型。同一供者出现在 ≥2 组时自动用配对 design `~ sample_id + condition`（供者作 blocking 因子吸收个体差异）；非配对数据自动退化为 `~ condition`；batch 列可用且不与 condition 混淆时插到最前
-- **供者从哪来**：GSE96583 的合并矩阵不带 sample_id（orig.ident 只有 STIM/CTRL 两大池，直接当样本用每组只有 1 个 pseudobulk、无 replicate 可拟合）。供者编码在 GEO 的逐细胞元数据 tsne.df 的 `ind` 列，按 **(group, barcode)** join 生成——条码在两组间大量重复，必须带组匹配；对象 cell ID 上 merge 加的数字后缀自动剥离。有原生 sample_id 列的数据集把 `cell_metadata` 置 null 即可
+- **供者从哪来**：GSE96583 的合并矩阵不带 sample_id（orig.ident 只有 STIM/CTRL 两大池，直接当样本用每组只有 1 个 pseudobulk、无 replicate 可拟合）。供者编码在 GEO 的逐细胞元数据 tsne.df 的 `ind` 列，**01 读入时**按 (group, barcode) join 写入 `sample_id`（merge 前的干净条码，无需处理数字后缀；条码在两组间大量重复，必须带组匹配）。有原生 sample_id 列的数据集把 `multi$cell_metadata` 置空，样本表每行即一个生物学样本
 - **守卫**：`min_cells`（pseudobulk 最小细胞数）、每组最少样本数、残差自由度（配对设计下 2v2 会参数饱和）；不满足的类型跳过并记入 `summary_degs.csv` 的 skip_reason
 - **结果判读**：05 是探索层、06 是确认层——同 padj 阈值下 06 的显著 DEG 应**更少更保守**，顶层 `summary_degs.csv` 与 `summary_05_vs_06.pdf` 直接对照。全基因结果（含独立过滤 padj=NA 行的 stat）保留，`run_gsea: true` 时按 Wald stat 排序喂 GSEA（复用 diff_gsea 的 gmt）
 

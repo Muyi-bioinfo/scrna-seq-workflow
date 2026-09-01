@@ -19,8 +19,9 @@
 ###    counts，NormalizeData/SCT/Harmony 的产物都不能进这里
 ###
 ### 输入：output/<batch>/03_annotate/seurat_annotated.rds
-###       + config 的 pseudobulk$cell_metadata（供者 join；GSE96583 的 sample_id 不在
-###         对象里，来自 GEO tsne.df 的 ind 列，按 (group, barcode) 匹配）
+###       （sample_id 列由 01 写入：常规场景 = 样本表每行；合并矩阵场景 =
+###         multi$cell_metadata 按 (group, barcode) join 供者——GSE96583 的供者在
+###         GEO tsne.df 的 ind 列，对象本身不带）
 ### 输出：output/<batch>/06_pseudobulk_de/
 ###   ├── pseudobulk_cell_counts.tsv   每个 pseudobulk（sample×celltype）的细胞数与去留
 ###   ├── pseudobulk_metadata.tsv      进 DESeq2 的 colData（kept 部分）
@@ -82,88 +83,14 @@ if (length(missing_cols) > 0) {
        "（检查 config 的 pseudobulk$condition_col / celltype_col）")
 }
 
-# ---- 2. 生成 sample_id（生物学重复）----
-# 优先用对象已有列；没有则从 cell_metadata（逐细胞元数据）按 (group, barcode) join。
-# ⚠️ GSE96583 的 orig.ident 只有 STIM/CTRL 两大池，直接当 sample 用每组只有 1 个
-#    pseudobulk、无 replicate 可拟合——必须回到供者层级
-build_sample_ids <- function(meta, cell_names) {
-  if (sample_col %in% colnames(meta)) {
-    message("-- sample 列已存在于 metadata: ", sample_col)
-    return(as.character(meta[[sample_col]]))
-  }
-  meta_file <- pb$cell_metadata
-  if (is.null(meta_file) || !nzchar(meta_file)) {
-    stop("metadata 没有 sample 列 \"", sample_col, "\"，且 config 未提供 pseudobulk$cell_metadata",
-         "（逐细胞元数据）——pseudobulk 需要生物学重复（供者/样本）信息才能建模")
-  }
-  if (!file.exists(meta_file)) stop("找不到 cell_metadata 文件: ", meta_file)
-  donor_col <- pb$donor_col
-  if (is.null(donor_col) || !nzchar(donor_col)) {
-    stop("使用 cell_metadata 时需同时指定 pseudobulk$donor_col（供者列名）")
-  }
-
-  # ⚠️ GEO tsne.df 首列（条码）无表头：read.table 会把它当 rownames、其余列左移。
-  #    先探「表头字段数 vs 首个数据行字段数」，错位则条码从 rownames 取回。
-  #    ⚠️ 连接不手动 close：readLines/read.delim 对未打开的连接会自动开关，
-  #    再 close 会报 invalid connection（run04 首跑实测）
-  open_con <- function() if (grepl("\\.gz$", meta_file)) gzfile(meta_file) else file(meta_file)
-  head_lines <- readLines(open_con(), n = 2)
-  n_head <- length(strsplit(head_lines[1], "\t", fixed = TRUE)[[1]])
-  n_data <- length(strsplit(head_lines[2], "\t", fixed = TRUE)[[1]])
-  m <- read.delim(open_con(), stringsAsFactors = FALSE)
-  barcode_meta <- if (n_data == n_head + 1) {
-    message("-- cell_metadata 首列无表头，条码按 rownames 读取")
-    rownames(m)
-  } else m[[1]]
-  if (!donor_col %in% colnames(m)) {
-    stop("cell_metadata 找不到供者列 \"", donor_col, "\"，现有列: ",
-         paste(colnames(m), collapse = ", "))
-  }
-
-  # 组别列：优先 config 的 cell_metadata_group_col，否则自动探测
-  # （该列取值需覆盖对象里的全部组别，大小写不敏感——tsne.df 的 stim 列 ctrl/stim ↔ CTRL/STIM）
-  cond_vals <- toupper(as.character(meta[[condition_col]]))
-  grp_col <- pb$cell_metadata_group_col
-  if (is.null(grp_col) || !grp_col %in% colnames(m)) {
-    grp_col <- NULL
-    for (cn in colnames(m)) {
-      if (all(cond_vals %in% toupper(as.character(m[[cn]])))) { grp_col <- cn; break }
-    }
-  }
-  if (is.null(grp_col) || !grp_col %in% colnames(m)) {
-    stop("无法在 cell_metadata 中定位组别列（需覆盖组别值 ",
-         paste(unique(cond_vals), collapse = "/"),
-         "），请在 config 指定 pseudobulk$cell_metadata_group_col")
-  }
-  message("-- cell_metadata: 组别列 ", grp_col, " | 供者列 ", donor_col)
-
-  # join 键 = (组别, 条码)：10x 条码在两组间大量重复，只按条码匹配会张冠李戴
-  # 条码变体试错：对象 cell ID 可能带 merge 加的 "_1/_2" 数字后缀（Seurat v5 merge
-  # 对重复条码补后缀），原始/去后缀两种口径取匹配率高者
-  key_meta <- paste(toupper(as.character(m[[grp_col]])), barcode_meta, sep = "|")
-  bc_variants <- list(cell_names, sub("_[0-9]+$", "", cell_names))
-  hits <- vapply(bc_variants, function(bc) sum(paste(cond_vals, bc, sep = "|") %in% key_meta),
-                 integer(1))
-  bc_use <- bc_variants[[which.max(hits)]]
-  match_rate <- max(hits) / length(bc_use)
-  if (match_rate < 0.5) {
-    stop("cell_metadata 与对象的条码匹配率过低（", round(100 * match_rate, 1),
-         "%）——cell_metadata 与表达矩阵可能不同源")
-  }
-  message("-- 条码匹配: ", max(hits), "/", length(bc_use),
-          "（", round(100 * match_rate, 1), "%）")
-  sid <- as.character(m[[donor_col]])[match(paste(cond_vals, bc_use, sep = "|"), key_meta)]
-  n_na <- sum(is.na(sid))
-  if (n_na > 0) {
-    message("-- ", n_na, "/", length(sid), " 个细胞在 cell_metadata 无供者信息，聚合时剔除")
-  }
-  sid
+# ---- 2. 样本列校验（01 已写入：常规场景 = 样本表每行；合并矩阵场景 =
+#        multi$cell_metadata 按 (group, barcode) join 供者，见 config.multi.yaml）----
+if (!sample_col %in% colnames(meta)) {
+  stop("metadata 缺少样本列 \"", sample_col, "\"——01 的多样本分支会写它：常规场景取样本表每行，",
+       "合并矩阵场景用 multi$cell_metadata 按 (group, barcode) join 供者")
 }
 
-scobj[[sample_col]] <- build_sample_ids(meta, colnames(scobj))
-
 # ---- 3. 按 sample × condition × celltype 聚合原始 counts ----
-counts_mat <- GetAssayData(scobj, layer = "counts")   # 原始整数 UMI（见文件头 ⚠️）
 cell_df <- data.frame(
   cell      = colnames(scobj),
   sample_id = as.character(scobj[[sample_col]][[1]]),
@@ -188,34 +115,38 @@ if (!is.null(exclude_ct) && length(exclude_ct) > 0) {
 }
 message("-- 聚合用细胞: ", nrow(cell_df), "/", n_before, "（剔除无供者信息与排除类型）")
 
-# 复合键用控制字符 \01 连接：类型名/组名里不可能出现，拆分绝不串位
-SEP <- "\01"
-grp_key <- paste(cell_df$sample_id, cell_df$condition, cell_df$celltype, sep = SEP)
-# batch 聚合：同一 pseudobulk 跨批次时 batch 因素不可用（记 NA）
-batch_pb <- tapply(cell_df$batch, grp_key,
-                   function(x) if (all(!is.na(x)) && length(unique(x)) == 1) unique(x)[1] else NA_character_)
+# 聚合走主流接口（Seurat de_vignette 的 pseudobulk 做法）：AggregateExpression 求和，
+# return.seurat = TRUE 时 group.by 列自动进 meta.data——不解析细胞名、无矩阵方向问题
+scobj_sub <- subset(scobj, cells = cell_df$cell)   # 无供者信息的细胞先剔除
+pb_seu <- AggregateExpression(scobj_sub, assays = "RNA", return.seurat = TRUE,
+                              group.by = c(sample_col, condition_col, celltype_col))
+counts_pb <- GetAssayData(pb_seu, layer = "counts")   # 基因 × pseudobulk（DESeq2 方向）
 
-# pseudobulk 聚合 = 稀疏指示矩阵 %*% counts（按组求和的等价实现）。
-# ⚠️ 不用 Matrix::rowsum：新版 Matrix 不再导出该对象（run04 实测），而 %*% 是
-#    稀疏矩阵最基础的运算，跨版本稳定；指示矩阵 行=组 列=细胞，行内全 0/1
-grp_fact <- factor(grp_key)
-counts_sub <- counts_mat[, cell_df$cell, drop = FALSE]   # 剔除无供者信息的细胞列
-ind <- Matrix::sparseMatrix(i = as.integer(grp_fact), j = seq_along(grp_fact),
-                            x = rep(1, length(grp_fact)),
-                            dims = c(nlevels(grp_fact), length(grp_fact)),
-                            dimnames = list(levels(grp_fact), cell_df$cell))
-# ⚠️ counts 是 基因×细胞，聚合要按细胞维求和 → tcrossprod(ind, counts) = ind %*% t(counts)
-pb_all <- as(Matrix::tcrossprod(ind, counts_sub), "dgCMatrix")   # 组 × 基因
-key_tab <- table(grp_key)
-parts <- strsplit(rownames(pb_all), SEP, fixed = TRUE)
+# pb_meta 直接取 meta.data 的分组列。⚠️ Seurat 会给数字开头的分组值加 "g" 前缀
+#（合法细胞名，与 AverageExpression 的 g0/g1 同款行为）——剥掉；剥后值必须在
+# 细胞层集合里才生效（防误伤以 g 开头的真实 id）
+strip_g <- function(v, valid) {
+  s <- sub("^g", "", v)
+  ifelse(s %in% valid, s, v)
+}
 pb_meta <- data.frame(
-  pseudobulk_id = rownames(pb_all),
-  sample_id     = vapply(parts, `[`, "", 1),
-  condition     = vapply(parts, `[`, "", 2),
-  celltype      = vapply(parts, `[`, "", 3),
-  batch         = unname(batch_pb[rownames(pb_all)]),
-  n_cells       = as.integer(key_tab[rownames(pb_all)]),
+  pseudobulk_id = colnames(pb_seu),
+  sample_id     = strip_g(as.character(pb_seu[[sample_col]][[1]]), unique(cell_df$sample_id)),
+  condition     = strip_g(as.character(pb_seu[[]][[condition_col]]), unique(cell_df$condition)),
+  celltype      = strip_g(as.character(pb_seu[[]][[celltype_col]]), unique(cell_df$celltype)),
   stringsAsFactors = FALSE)
+# 每格细胞数/批次按三元组计数对齐；键用控制字符 \01 连接（类型名/组名里不会出现）
+key_cells <- paste(cell_df$sample_id, cell_df$condition, cell_df$celltype, sep = "\01")
+key_pb <- paste(pb_meta$sample_id, pb_meta$condition, pb_meta$celltype, sep = "\01")
+# batch 聚合：同一 pseudobulk 跨批次时 batch 因素不可用（记 NA）
+batch_pb <- tapply(cell_df$batch, key_cells,
+                   function(x) if (all(!is.na(x)) && length(unique(x)) == 1) unique(x)[1] else NA_character_)
+pb_meta$batch <- unname(batch_pb[key_pb])
+pb_meta$n_cells <- as.integer(table(key_cells)[key_pb])
+if (anyNA(pb_meta$n_cells)) {
+  stop("pseudobulk 与细胞层三元组对不上（AggregateExpression 分组名改写？），",
+       "请检查 sample/condition/celltype 列的取值")
+}
 rownames(pb_meta) <- pb_meta$pseudobulk_id
 
 # ---- 4. pseudobulk 水平过滤与整理 ----
@@ -272,8 +203,7 @@ pca_scores <- function(mat, ntop = 2000) {
   list(df = as.data.frame(pc$x), pve = summary(pc)$importance[2, ])
 }
 if (nrow(pb_meta) >= 6) {
-  # ⚠️ pca_scores 期待 基因×样本；pb_all 是 组×基因，须转置
-  pcs <- pca_scores(t(pb_all[pb_meta$pseudobulk_id, ]))
+  pcs <- pca_scores(counts_pb[, pb_meta$pseudobulk_id])   # counts_pb 已是 基因×样本
   pcs$df$condition <- pb_meta$condition   # 颜色分组（pca_scores 只返回坐标）
   pcs$df$sample_id <- as.character(pb_meta$sample_id)   # 供者标签（复合键拆出的干净 id）
   p <- ggplot(pcs$df, aes(x = PC1, y = PC2, color = condition)) +
@@ -377,7 +307,7 @@ for (ct in cts_all) {
 
   dir.create(ct_dir, recursive = TRUE, showWarnings = FALSE)
   options(fig_outdir = ct_dir)   # 本类型的图直接落子目录（save_fig 读该 option）
-  cnt <- t(as.matrix(pb_all[sub_meta$pseudobulk_id, , drop = FALSE]))   # DESeq2 要 基因×样本
+  cnt <- as.matrix(counts_pb[, sub_meta$pseudobulk_id, drop = FALSE])   # 基因×样本
   storage.mode(cnt) <- "integer"   # rowsum 产出 double；DESeq2 要整数（避免静默 round 警告）
   dds <- DESeq2::DESeqDataSetFromMatrix(countData = cnt, colData = sub_meta, design = fml)
   dds <- DESeq2::DESeq(dds, quiet = TRUE)

@@ -37,6 +37,40 @@ if (cfg$mode == "single") {
   message("-- 样本表: ", cfg$multi$sample_sheet)
   print(sheet)
 
+  # 逐细胞元数据 join（可选）：合并矩阵场景下样本表每行是"多供者池"（如 GSE96583，
+  # 供者在 GEO tsne.df 的 ind 列），pseudobulk 需要真实生物学重复——按 (group, barcode)
+  # join 生成 sample_id。常规场景（cellranger 每样本一个供者）不配置即可。
+  # ⚠️ GEO tsne.df 首列（条码）无表头：read.table 会把它当 rownames——用
+  # 「表头字段数 vs 首行数据字段数」探测；连接不手动 close（读取函数会自动开关）
+  join_cell_metadata <- function(x, meta_cfg, group_label) {
+    open_con <- function() if (grepl("\\.gz$", meta_cfg$cell_metadata)) {
+      gzfile(meta_cfg$cell_metadata)
+    } else file(meta_cfg$cell_metadata)
+    head_lines <- readLines(open_con(), n = 2)
+    n_head <- length(strsplit(head_lines[1], "\t", fixed = TRUE)[[1]])
+    n_data <- length(strsplit(head_lines[2], "\t", fixed = TRUE)[[1]])
+    m <- read.delim(open_con(), stringsAsFactors = FALSE)
+    bc_meta <- if (n_data == n_head + 1) rownames(m) else m[[1]]
+    if (!meta_cfg$donor_col %in% colnames(m)) {
+      stop("cell_metadata 找不到供者列 \"", meta_cfg$donor_col,
+           "\"，现有列: ", paste(colnames(m), collapse = ", "))
+    }
+    grp_col <- meta_cfg$cell_metadata_group_col
+    if (is.null(grp_col) || !grp_col %in% colnames(m)) {
+      stop("multi$cell_metadata_group_col 需指定 cell_metadata 中的组别列")
+    }
+    # 本样本的行（组别名大小写归一：STIM ↔ stim），条码匹配出供者
+    sel <- toupper(as.character(m[[grp_col]])) == toupper(group_label)
+    donor <- setNames(as.character(m[[meta_cfg$donor_col]])[sel], bc_meta[sel])
+    sid <- unname(donor[colnames(x)])
+    n_na <- sum(is.na(sid))
+    if (n_na > 0) {
+      message("  -- ", group_label, " 有 ", n_na, "/", ncol(x),
+              " 个细胞无供者信息（06 pseudobulk 聚合时剔除；此处为读入时计数，QC 还会再滤一部分）")
+    }
+    sid
+  }
+
   sample_list <- lapply(seq_len(nrow(sheet)), function(i) {
     sample_name <- sheet$sample[i]
     matrix_path <- sheet$matrix[i]
@@ -58,6 +92,12 @@ if (cfg$mode == "single") {
                             min.cells = min_cells,
                             min.features = cfg$qc$nfeature_min)
     x[["group"]] <- sheet$group[i]   # 分组标签来自样本表（去批次的依据）
+    # sample_id（生物学重复，pseudobulk 的统计单元）：默认样本表每行 = 一个样本；
+    # 配置了 cell_metadata 则按 (group, barcode) join 供者覆盖（合并矩阵场景）
+    x[["sample_id"]] <- sheet$sample[i]
+    if (!is.null(cfg$multi$cell_metadata) && nzchar(cfg$multi$cell_metadata)) {
+      x[["sample_id"]] <- join_cell_metadata(x, cfg$multi, sheet$group[i])
+    }
     message("     -> ", ncol(x), " cells | ", nrow(x), " genes")
     x
   })

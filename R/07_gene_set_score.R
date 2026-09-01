@@ -8,7 +8,7 @@
 source("utils/utils.R")
 cfg <- load_config()
 step_dir <- setup_step("07_gene_set_score")
-log_step(paste("高级模块 B | 基因集打分 | 基因集文件:", cfg$advanced$gene_set_gmt))
+log_step(paste("高级模块 A | 基因集打分 | 基因集文件:", cfg$advanced$gene_set_gmt))
 library(clusterProfiler)
 set.seed(123)   # ⚠️ AddModuleScore 随机抽样对照基因集，设种子保证打分可复现
 
@@ -52,4 +52,4 @@ for (pw in show_pathways) {
 }
 
 slim_save(scobj, "seurat_scored.rds", step_dir)
-log_step("高级模块 B 完成 —— 全部高级模块结束")
+log_step("高级模块 A 完成 —— 全部高级模块结束")

@@ -75,13 +75,13 @@ subcluster:
 
 # ---------- 高级模块（run_pipeline.sh --with-advanced 启用）----------
 advanced:
-  gene_set_gmt: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt   # 06_gene_set_score：基因集打分用 gmt 文件
-  # gene_set_show:                    # 06：FeaturePlot 展示的通路名（每个通路单独一张图；留空 = 取 gmt 前两条）
+  gene_set_gmt: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt   # 07_gene_set_score：基因集打分用 gmt 文件
+  # gene_set_show:                    # 07：FeaturePlot 展示的通路名（每个通路单独一张图；留空 = 取 gmt 前两条）
   #   - HALLMARK_INTERFERON_ALPHA_RESPONSE
   trajectory:
-    num_dim: 50               # 07_trajectory_analysis：monocle3 预处理维度数
-    # preset: XXX             # 07：谱系预设文件名（config/trajectory_presets/ 下；留空 = 全部细胞）
-    # reduction: raw          # 07：轨迹空间——raw(自算,保信号) / harmony(校正嵌入) / umap(复用Seurat UMAP)
-    # root_celltype: XXX      # 07：伪时间根（轨迹起点，留空则自动用最大细胞群）
+    num_dim: 50               # 08_trajectory_analysis：monocle3 预处理维度数
+    # preset: XXX             # 08：谱系预设文件名（config/trajectory_presets/ 下；留空 = 全部细胞）
+    # reduction: raw          # 08：轨迹空间——raw(自算,保信号) / harmony(校正嵌入) / umap(复用Seurat UMAP)
+    # root_celltype: XXX      # 08：伪时间根（轨迹起点，留空则自动用最大细胞群）
   cellchat:
-    species: human            # 08_cell_communication：配体-受体数据库物种（human / mouse）
+    species: human            # 09_cell_communication：配体-受体数据库物种（human / mouse）

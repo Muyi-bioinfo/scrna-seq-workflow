@@ -1,15 +1,15 @@
 ###############################################################################
-### 08_cell_communication.R — 高级模块：细胞通讯分析（CellChat）
+### 09_cell_communication.R — 高级模块：细胞通讯分析（CellChat）
 ###
 ### CellChat 基于配体-受体数据库推断细胞群间通讯强度与通路：
 ###   single 整体通讯网络 / multi 两组通讯差异比较（如 STIM vs CTRL）
 ### 输入：output/<batch>/03_annotate/seurat_annotated.rds（需有 celltype 列）
-### 输出：output/<batch>/08_cell_communication/（网络图、通路气泡图、结果 rds）
+### 输出：output/<batch>/09_cell_communication/（网络图、通路气泡图、结果 rds）
 ###############################################################################
 
 source("utils/utils.R")
 cfg <- load_config()
-step_dir <- setup_step("08_cell_communication")
+step_dir <- setup_step("09_cell_communication")
 log_step(paste("高级模块 | 细胞通讯分析 | 模式:", cfg$mode))
 library(CellChat)
 
@@ -91,4 +91,4 @@ if (cfg$mode == "single") {
            "ranknet_pathway_comparison", type = "heatmap")
 }
 
-log_step("高级模块 | 细胞通讯分析完成 → 结果见 output/08_cell_communication/")
+log_step("高级模块 | 细胞通讯分析完成 → 结果见 output/09_cell_communication/")

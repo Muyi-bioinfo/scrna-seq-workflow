@@ -36,10 +36,11 @@ scrna-seq-workflow/
 │   ├── 02_preprocess_cluster.R  # Preprocessing + batch correction + UMAP + clustering
 │   ├── 03_annotate.R            # Cell annotation + optional subclustering (config switch)
 │   ├── 04_multi_group_plot.R    # Multi-group visualization
-│   ├── 05_diff_gsea.R           # Differential expression + GSEA
-│   ├── 06_gene_set_score.R      # Advanced: gene-set scoring
-│   ├── 07_trajectory_analysis.R # Advanced: trajectory (monocle3)
-│   └── 08_cell_communication.R  # Advanced: cell-cell communication (CellChat)
+│   ├── 05_diff_gsea.R           # Exploratory DE + GSEA (cell-level statistics)
+│   ├── 06_pseudobulk_de.R       # Confirmatory DE: pseudobulk + DESeq2 (sample-aware)
+│   ├── 07_gene_set_score.R      # Advanced: gene-set scoring
+│   ├── 08_trajectory_analysis.R # Advanced: trajectory (monocle3)
+│   └── 09_cell_communication.R  # Advanced: cell-cell communication (CellChat)
 ├── Python/                      # Python track (planned: parallel scanpy version, see Python/README.md)
 ├── docs/                        # Pipeline docs / cellranger guide / R package compilation notes
 ├── utils/                       # Shared utilities: utils.R (config/archiving/QC/preprocess/clustering)
@@ -133,7 +134,7 @@ Rscript R/02_preprocess_cluster.R   # run a single stage directly (e.g. submit t
 | Dataset | Source | Used by |
 |---|---|---|
 | PBMC 3k (hg19) | 10x Genomics website | single-sample pipeline |
-| STIM/CTRL matrices | GSE96583 (IFN-β stimulated PBMC) | multi-sample integration + DE + GSEA |
+| STIM/CTRL matrices | GSE96583 (IFN-β stimulated PBMC) | multi-sample integration + DE + GSEA + pseudobulk DE |
 | pbmc_1k_v3 FASTQ + GRCh38-2024-A reference | 10x Genomics website | real cellranger practice |
 
 Download locations and directory layout: data-sources section at the end of [docs/01_pipeline_overview.md](docs/01_pipeline_overview.md).
@@ -151,9 +152,10 @@ Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/`
 | 03 annotate (+ subcluster) | `seurat_annotated.rds`, `all_markers_table.rds`, `top10_markers.csv`, `annotation_evidence.csv` | `dimplot_annotated`, `dotplot_markers_by_cluster`, `featureplot_celltypes/` |
 | 04 multi-group plot | figures only | `barplot_cell_proportion`, `dotplot_grouped`, `heatmap_top5_markers` |
 | 05 DE + GSEA | `split_markers.rds`, `diff_stim_vs_ctrl.rds` | `compareCluster_dotplot`, `gsea_kegg_dotplot`, `gsea_hallmark_dotplot` |
-| 06 gene-set scoring | `seurat_scored.rds` | `featureplot_<pathway>` (one per signature) |
-| 07 trajectory | `trajectory_cds.rds`, `trajectory_resolved.yaml` (parameter snapshot) | `trajectory_pseudotime`, `trajectory_celltype`, `trajectory_by_group` |
-| 08 cell communication | `cellchat.rds` (single) / `cellchat_list.rds` (multi) | `compare_interaction_counts`, `diff_network_all`, `ranknet_pathway_comparison` |
+| 06 pseudobulk DE | `summary_degs.csv`, per-celltype `deseq2_results.tsv` + `significant_degs.tsv` | `volcano`, `MAplot`, `PCA` (per cell type), `summary_05_vs_06`, `all_types_pca` |
+| 07 gene-set scoring | `seurat_scored.rds` | `featureplot_<pathway>` (one per signature) |
+| 08 trajectory | `trajectory_cds.rds`, `trajectory_resolved.yaml` (parameter snapshot) | `trajectory_pseudotime`, `trajectory_celltype`, `trajectory_by_group` |
+| 09 cell communication | `cellchat.rds` (single) / `cellchat_list.rds` (multi) | `compare_interaction_counts`, `diff_network_all`, `ranknet_pathway_comparison` |
 
 ## Key pitfalls
 
@@ -167,10 +169,11 @@ Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/`
 | GSEA results not reproducible | GSEA estimates p-values by random permutation | `set.seed(123)` |
 | Annotation map mixed up between single/multi-sample runs | different datasets have different cluster counts and cell types | separate config profiles: config.yaml / config.multi.yaml |
 | cluster_map maps to the wrong clusters after a rerun (e.g. CD14 Mono swapped with naive T) | Louvain cluster IDs are arbitrary labels from community-discovery order; any upstream change re-shuffles all IDs while the clusters themselves stay the same (run02 incident, 2026-08-21) | ① machine check via `check_mapping_evidence()` in 03: a wrong mapping raises a warning + an evidence table `annotation_evidence.csv` ② the clustering chain is fully seeded (`set.seed` inside `cluster_cells()` + `random.seed=42`): same input ⇒ same IDs ③ verification reruns use a new run name, keeping the old run for comparison |
-| monocle3 `preprocess_cds` segfaults | irlba fastpath + multithreaded OpenBLAS race (r-irlba 2.3.7 + OpenBLAS 0.3.33) | run_pipeline.sh sets `OPENBLAS_NUM_THREADS=1` for step 07 only (Sys.setenv inside R does not work — it must be set at shell level) |
+| irlba segfaults (monocle3 `preprocess_cds`, and step 02 `RunPCA` after the 2026-09-01 environment refresh) | irlba + multithreaded OpenBLAS race (r-irlba 2.3.7 + OpenBLAS 0.3.33) | run_pipeline.sh pins `OPENBLAS_NUM_THREADS=1` for every R step (Sys.setenv inside R does not work — it must be set at shell level) |
 | `order_cells` errors with "root_pr_nodes or root_cells must be provided" | non-interactive Rscript cannot open the interactive root picker (only RStudio does) | lineage presets specify the root explicitly (config/trajectory_presets/) |
 | ~30% Inf pseudotime when running all cell types together | no continuous trajectory exists across heterogeneous cell types — the graph is disconnected | subset to a lineage (e.g. T cells only); verified Inf = 0 on run02 |
 | FeaturePlot inconsistent with the DimPlot layout | `umap_naive` hijacks the default dimrec (DefaultDimReduc matches by name), so FeaturePlot without an explicit reduction draws on the pre-correction embedding | always pass an explicit `reduction = "umap"` |
+| Group-level DE looks inflated (thousands of "significant" STIM-vs-CTRL genes) | `FindAllMarkers`/`FindMarkers` treat each cell as an independent observation, but cells from the same donor are correlated — pseudoreplication (GSE96583 is 8 paired donors) | confirm with `06_pseudobulk_de.R`: aggregate raw counts per donor × cell type, DESeq2 with the donor as blocking factor; the same-threshold comparison lands in `summary_degs.csv` |
 
 ## Repository scope & data availability
 
@@ -186,14 +189,14 @@ Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/`
 - ⚠️ 4 packages must be installed from GitHub (not available via conda, see notes at the top of the yaml): SeuratWrappers, CellChat (required) + presto, scCustomize (optional)
 - cellranger 9.0.1 (standalone software, not an R package; see docs/02_cellranger_guide.md)
 
-### Advanced-module dependencies (check before running 07/08)
+### Advanced-module dependencies (check before running 08/09)
 
 ```bash
-# 07 trajectory: monocle3 installed and fully validated (run02 batch, T-cell lineage preset)
+# 08 trajectory: monocle3 installed and fully validated (run02 batch, T-cell lineage preset)
 #   install: mamba install -c conda-forge -c bioconda r-monocle3
 #   note: requires single-threaded BLAS (handled automatically by run_pipeline.sh; see Key pitfalls)
 
-# 08 cell-cell communication: CellChat 2.2.0.9001 installed (compiled from GitHub source; removed from CRAN)
+# 09 cell-cell communication: CellChat 2.2.0.9001 installed (compiled from GitHub source; removed from CRAN)
 #   install (for reference): devtools::install_github("jinworks/CellChat")
 #   compilation notes: docs/03_r_package_compile.md (conda env + R 4.5 headers)
 ```

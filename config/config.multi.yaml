@@ -10,7 +10,7 @@
 
 # ---------- 项目与目录 ----------
 mode: multi               # 分析模式：single（单样本）/ multi（多样本）
-batch: run03              # 运行批次：本次运行的结果与日志归档到 output/<batch>/ 和 logs/<batch>/
+batch: run04              # 运行批次：本次运行的结果与日志归档到 output/<batch>/ 和 logs/<batch>/
                           # 同批次名重跑 = 断点续跑；换批次名 = 全新运行（旧批次结果保留）
                           # 验证改动/改脚本后的重跑建议换新批次名，旧批次留作对照基线
                           # 不同模式用不同批次名（run01 是单样本批次，run02/run03 是多样本批次；
@@ -101,19 +101,48 @@ diff_gsea:
     - Eryth
     - Mk
 
+# ---------- 模块 9+：pseudobulk 确认性差异分析（sample-aware）----------
+# 05 的 FindAllMarkers 以细胞为统计单元、把合并后的两大组当独立样本——忽略供者配对
+# 产生伪重复，p 值与 DEG 数虚高。本模块把同类细胞按 生物学样本×细胞类型 聚合成
+# pseudobulk（统计单元 = sample，不再是 cell），用 DESeq2 做组间差异：
+# 05 是探索层，本模块是确认层。与单细胞口径的对照：同对比 + 同基因全集 + 同 BH 校正下，
+# 细胞级（伪重复）显著数 ≥ 样本级显著数，差量进 summary_degs.csv
+pseudobulk:
+  sample_col: sample_id         # 生物学重复（供者）列：pseudobulk 聚合与配对 design 的单位
+  condition_col: group          # 处理/对照分组列
+  batch_col: batch              # 批次列（可选）：null 或列缺失/单一取值时自动退出 design
+  celltype_col: celltype        # 细胞类型列（逐类型独立建模，不混类型）
+  # ⚠️ GSE96583 的合并矩阵没有 sample_id（orig.ident 只有 STIM/CTRL 两大池，直接当
+  # sample 用每组只有 1 个 pseudobulk，无 replicate 可拟合）。供者编码在作者逐细胞
+  # 元数据（GEO 的 tsne.df）的 ind 列，按 (group, barcode) join 生成——条码在两组间
+  # 重复，必须带 group 匹配；条码 = 对象 cell ID 去掉 merge 加的 "_数字" 后缀。
+  # 有原生 sample_id 列的数据集：cell_metadata 置 null 即可
+  cell_metadata: data/matrices/GSE96583/GSE96583_batch2.total.tsne.df.tsv.gz
+  donor_col: ind                # cell_metadata 中的供者列 → 生成 sample_id
+  method: DESeq2                # v1 仅 DESeq2
+  min_cells: 20                 # sample×celltype 至少 N 细胞才成 pseudobulk，低于则丢弃该格
+  min_samples_per_group: 2      # 每组至少 N 个 pseudobulk 样本（配对 design 下还须残差 df≥1）
+  padj_cutoff: 0.05
+  log2fc_cutoff: 1              # 火山图/显著判定的 |log2FC| 线（DESeq2 的 log2FC）
+  test_group: STIM              # 处理组（logFC 正向）
+  reference_group: CTRL         # 对照组（condition 因子的参考水平）
+  lfc_shrink: true              # apeglm 收缩 log2FC（仅展示列；不可用自动降级，不影响 padj/stat）
+  run_gsea: false               # true：全基因 DEG 按 Wald stat 排序喂 GSEA（复用 diff_gsea 的 gmt）
+  exclude_celltypes: []         # 可选剔除（名字须与注释完全一致）
+
 # ---------- 高级模块（run_pipeline.sh --with-advanced 启用）----------
 advanced:
-  gene_set_gmt: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt   # 06_gene_set_score：基因集打分用 gmt 文件
-  gene_set_show:                                                         # 06：FeaturePlot 展示的通路名（每个通路单独一张图；留空 = 取 gmt 前两条）
+  gene_set_gmt: data/reference/gene_sets/h.all.v2022.1.Hs.symbols.gmt   # 07_gene_set_score：基因集打分用 gmt 文件
+  gene_set_show:                                                         # 07：FeaturePlot 展示的通路名（每个通路单独一张图；留空 = 取 gmt 前两条）
     - HALLMARK_INTERFERON_ALPHA_RESPONSE   # IFN-β 刺激数据展示 IFN 通路（刺激后暴涨 27 倍）
     - HALLMARK_INTERFERON_GAMMA_RESPONSE
   trajectory:
-    num_dim: 50               # 07_trajectory_analysis：monocle3 预处理维度数
+    num_dim: 50               # 08_trajectory_analysis：monocle3 预处理维度数
     preset: pbmc_T_cell       # 07：谱系预设文件名（config/trajectory_presets/ 下；留空 = 全部细胞）
-    reduction: raw            # 07：轨迹空间——raw=自算PCA/UMAP(不校正,适合批次=生物学条件)
+    reduction: raw            # 08：轨迹空间——raw=自算PCA/UMAP(不校正,适合批次=生物学条件)
                               #                harmony=校正嵌入(适合技术批次)  umap=复用Seurat UMAP(坐标与DimPlot一致)
     # 主 config 显式参数优先于预设，需要临时覆盖时取消注释：
     # root_celltype: CD4 Naive T         # 伪时间根（轨迹起点）
     # subset_celltypes: [CD4 Naive T, CD4 Memory T]
   cellchat:
-    species: human            # 08_cell_communication：配体-受体数据库物种（human / mouse）
+    species: human            # 09_cell_communication：配体-受体数据库物种（human / mouse）

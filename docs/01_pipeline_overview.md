@@ -9,11 +9,11 @@
 
 | 设计 | 借鉴来源 | 本项目实现 |
 |------|---------|-----------|
-| 每步一个独立脚本 | hossainlab/sc-workflow（`R/01_qc.R` ~ `R/08_*.R`） | `R/01_load_qc.R` ~ `06_gene_set_score.R` |
+| 每步一个独立脚本 | hossainlab/sc-workflow（`R/01_qc.R` ~ `R/08_*.R`） | `R/01_load_qc.R` ~ `09_cell_communication.R` |
 | 参数集中配置 | chunyuanzhang/scRNA-seq、Prezi atlas pipeline（`config/config.yaml`） | `config/config.yaml` + `config/config.multi.yaml`（双 profile） |
 | 样本表 | chunyuanzhang 的 `sampleandpopulation.tsv` | `config/sample_sheet.csv`（sample, group, fastqs, matrix） |
 | 顺序 runner + 断点续跑 | hossainlab 的 bash `&&` 串联（升级版） | `run_pipeline.sh`（.done 标记跳过已跑步骤） |
-| 每步独立结果目录 | hossainlab 的 `results/01_qc/` | `output/<batch>/01_load_qc/` ... `output/<batch>/08_cell_communication/` |
+| 每步独立结果目录 | hossainlab 的 `results/01_qc/` | `output/<batch>/01_load_qc/` ... `output/<batch>/09_cell_communication/` |
 
 > 工业级项目多用工作流引擎（[nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) 用 Nextflow，[epigen/dea_seurat](https://github.com/epigen/dea_seurat) 用 Snakemake）。本流程保持无额外依赖，但每步一脚本 + 产物断点的设计使其可以平滑迁移到 Snakemake/Nextflow，也天然支持 HPC（每步 = 一个投递任务）。
 
@@ -34,10 +34,10 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
                                                              03_annotate（80%时间）
                                                              （注释 + 可选亚群细分）
                                                                    │
-                                             ┌─────────────────────┼──────────────┐
-                                             ▼                     ▼              ▼
-                                    04_multi_group_plot    05_diff_gsea   06 高级模块
-                                    (多组可视化)           (差异+GSEA)    (基因集打分)
+                                             ┌──────────────┬──────┴───────┬──────┐
+                                             ▼              ▼              ▼      ▼
+                                    04_multi_group_plot  05_diff_gsea  06_pseudobulk_de  07+ 高级
+                                    (多组可视化)         (探索性DE+GSEA) (确认性DE,样本级) (基因集打分等)
 ```
 
 ## 脚本粒度设计（参考 hossainlab/sc-workflow）
@@ -50,7 +50,7 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 | 预处理到分群是一条流水线，单样本/多样本只是中间多一步去批次 | 02_preprocess_cluster = 预处理 + 去批次 + 聚类 |
 | 亚群细分是注释的延伸（对注释结果的精细调整） | 03_annotate = 注释 + 亚群（config 开关） |
 
-这样每个脚本跑完都有一个**完整可讲的阶段性结果**，同时脚本数量与 sc-workflow（8 个）相当，不至于碎片化。
+这样每个脚本跑完都有一个**完整可讲的阶段性结果**，同时脚本总量（9 个）与 sc-workflow（8 个）相当，不至于碎片化。
 
 ## 模块详解
 
@@ -64,9 +64,10 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 | 6+7 注释+亚群 | `03_annotate.R` | `annotate:`、`subcluster:` | clustered → `seurat_annotated.rds`（+ 亚群 rds） | featureplot_markers、dimplot_annotated、（亚群图） |
 | 8 多组可视化 | `04_multi_group_plot.R` | `multi_group:` | annotated → 仅图 | 比例图、分组 DotPlot、热图 |
 | 9 差异+GSEA | `05_diff_gsea.R` | `diff_gsea:` | annotated → 差异 rds + 图 | compareCluster、GSEA dotplot |
-| A 基因集打分（高级） | `06_gene_set_score.R` | `advanced:` | annotated → `seurat_scored.rds` | 通路打分 FeaturePlot |
-| B 拟时序（高级） | `07_trajectory_analysis.R` | `advanced$trajectory`（preset / reduction / root_celltype） | annotated → `trajectory_cds.rds` + `trajectory_resolved.yaml` 参数快照 | 伪时间轨迹图、细胞类型轨迹图、分组轨迹图 |
-| C 细胞通讯（高级） | `08_cell_communication.R` | `advanced$cellchat` | annotated → 通讯网络结果 | 通讯网络图、通路气泡图、组间差异比较 |
+| 9+ pseudobulk 确认性 DE（样本级） | `06_pseudobulk_de.R` | `pseudobulk:`（供者 join / 配对 design / min 守卫） | annotated → 逐类型 DESeq2 结果 + `summary_degs.csv` | 逐类型 volcano/MA/PCA、全局 pseudobulk PCA、05 vs 06 对比条形图 |
+| A 基因集打分（高级） | `07_gene_set_score.R` | `advanced:` | annotated → `seurat_scored.rds` | 通路打分 FeaturePlot |
+| B 拟时序（高级） | `08_trajectory_analysis.R` | `advanced$trajectory`（preset / reduction / root_celltype） | annotated → `trajectory_cds.rds` + `trajectory_resolved.yaml` 参数快照 | 伪时间轨迹图、细胞类型轨迹图、分组轨迹图 |
+| C 细胞通讯（高级） | `09_cell_communication.R` | `advanced$cellchat` | annotated → 通讯网络结果 | 通讯网络图、通路气泡图、组间差异比较 |
 
 ### 模块 0：cellranger 定量（上游）
 
@@ -122,20 +123,28 @@ RunUMAP → FindNeighbors（KNN → SNN 图）→ FindClusters（resolution 越�
 - **策略一（群水平）**：`celltype.stim` 组合身份 → FindAllMarkers → `compareCluster` 批量 KEGG 富集
 - **策略二（刺激前后）**：同一细胞类型处理 vs 对照 → `FindMarkers(logfc.threshold = 0)` → geneList 三部曲（取 logFC → 命名 → 降序排序）→ `GSEA`（Hallmark/KEGG，`set.seed` 保证可复现）
 
+### 模块 9+：pseudobulk 确认性差异分析（sample-aware）
+
+- **为什么**：模块 9 以细胞为统计单元——同一供者的细胞高度相关，当成独立样本就是**伪重复**（pseudoreplication），p 值虚小、DEG 数虚高。GSE96583 本质是 Kang 2017 的 8 供者配对数据，这是组间差异分析的统计要害
+- **怎么做**：原始 counts 按 供者×处理×细胞类型 聚合成 pseudobulk（`Matrix::rowsum`，**统计单元 = sample，不再是 cell**）→ 每个细胞类型独立建 DESeq2 负二项模型。同一供者出现在 ≥2 组时自动用配对 design `~ sample_id + condition`（供者作 blocking 因子吸收个体差异）；非配对数据自动退化为 `~ condition`；batch 列可用且不与 condition 混淆时插到最前
+- **供者从哪来**：GSE96583 的合并矩阵不带 sample_id（orig.ident 只有 STIM/CTRL 两大池，直接当样本用每组只有 1 个 pseudobulk、无 replicate 可拟合）。供者编码在 GEO 的逐细胞元数据 tsne.df 的 `ind` 列，按 **(group, barcode)** join 生成——条码在两组间大量重复，必须带组匹配；对象 cell ID 上 merge 加的数字后缀自动剥离。有原生 sample_id 列的数据集把 `cell_metadata` 置 null 即可
+- **守卫**：`min_cells`（pseudobulk 最小细胞数）、每组最少样本数、残差自由度（配对设计下 2v2 会参数饱和）；不满足的类型跳过并记入 `summary_degs.csv` 的 skip_reason
+- **结果判读**：05 是探索层、06 是确认层——同 padj 阈值下 06 的显著 DEG 应**更少更保守**，顶层 `summary_degs.csv` 与 `summary_05_vs_06.pdf` 直接对照。全基因结果（含独立过滤 padj=NA 行的 stat）保留，`run_gsea: true` 时按 Wald stat 排序喂 GSEA（复用 diff_gsea 的 gmt）
+
 ## 高级模块（run_pipeline.sh --with-advanced）
 
-- **06 基因集打分**：AddModuleScore（基因集 vs 随机对照集的平均表达差，推断通路活性）；UCell/AUCell 等基于排名的方法见扩展学习脚本（未随本仓库上传）
-- **07 拟时序（monocle3）**：学习分化/变化轨迹图 + 伪时间排序，研究连续变化过程（如 T 细胞分化、刺激响应）；适合具有连续谱系结构的数据。参考 [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow) 的 `05_trajectory_analysis` 模块
+- **07 基因集打分**：AddModuleScore（基因集 vs 随机对照集的平均表达差，推断通路活性）；UCell/AUCell 等基于排名的方法见扩展学习脚本（未随本仓库上传）
+- **08 拟时序（monocle3）**：学习分化/变化轨迹图 + 伪时间排序，研究连续变化过程（如 T 细胞分化、刺激响应）；适合具有连续谱系结构的数据。参考 [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow) 的 `05_trajectory_analysis` 模块
   - **谱系预设**（`config/trajectory_presets/`）：轨迹分析需要两个先验——哪些细胞构成连续过程、谁是起点。预设文件 = root + 细胞子集 + 文献依据，主 config 用 `trajectory$preset` 引用；留空 = 全部细胞（无先验）。写作清单见该目录 README
   - **轨迹空间**（`trajectory$reduction`）：`raw` = monocle3 自算 PCA/UMAP（保留条件信号，适合批次=生物学条件，如 STIM/CTRL）/ `harmony` = 注入校正嵌入（技术批次）/ `umap` = 复用 Seurat 布局（坐标与 DimPlot 完全一致，校正性取决于 Seurat 端来源）
   - 每次运行写 `trajectory_resolved.yaml` 快照，记录实际生效的预设/根/子集/轨迹空间/Inf 细胞数，随时可追溯
-- **08 细胞通讯（CellChat）**：基于配体-受体数据库推断细胞群之间的通讯强度与通路。
+- **09 细胞通讯（CellChat）**：基于配体-受体数据库推断细胞群之间的通讯强度与通路。
   - 单样本：整体通讯网络（数量/强度网络图、信号角色热图、通路气泡图）
   - 多样本：两组通讯差异比较（如 STIM vs CTRL 的 IFN 信号差异，CellChat 官方教程的经典用法）
   - 参考 [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow) 的 `06_cell_communication` 模块
   - CellChat 官方教程 vignette：https://htmlpreview.github.io/?https://github.com/jinworks/CellChat/blob/master/tutorial/CellChat-vignette.html
 
-> ✅ 07 拟时序（monocle3）与 08 细胞通讯（CellChat）均已装包；07 已全量验证（run02 批次：T 细胞谱系预设，14,214 细胞，Inf=0）。拟时序另有独立学习项目（monocle3/velocyto/scvelo 已真实跑通，未随本仓库上传）。
+> ✅ 08 拟时序（monocle3）与 09 细胞通讯（CellChat）均已装包；08 已全量验证（run02 批次：T 细胞谱系预设，14,214 细胞，Inf=0）。拟时序另有独立学习项目（monocle3/velocyto/scvelo 已真实跑通，未随本仓库上传）。
 
 > 多种整合方法的对比**不单独设脚本**——主线 `02_preprocess_cluster.R` 的多样本分支已支持 harmony/RPCA/FastMNN，改 config 的 `integrate$method` 即可切换；各方法原理对比见扩展学习脚本（未随本仓库上传）。不做功能重复的脚本，保持流程精简。
 
@@ -144,7 +153,7 @@ RunUMAP → FindNeighbors（KNN → SNN 图）→ FindClusters（resolution 越�
 | 数据 | 来源 | 用途 |
 |------|------|------|
 | PBMC 3k（hg19 三件套） | 10x 官网 | 单样本流程 |
-| STIM/CTRL 表达矩阵 | GSE96583（IFN-β 刺激 PBMC） | 多样本整合 + 差异 + GSEA（注：该 GEO 矩阵在提交时被过滤掉了线粒体基因，percent.mt 指标退化为 0；真实 cellranger 输出含 MT 基因，不受影响） |
+| STIM/CTRL 表达矩阵 | GSE96583（IFN-β 刺激 PBMC） | 多样本整合 + 差异 + GSEA + pseudobulk 差异（注：该 GEO 矩阵在提交时被过滤掉了线粒体基因，percent.mt 指标退化为 0；真实 cellranger 输出含 MT 基因，不受影响）。供者元数据 `GSE96583_batch2.total.tsne.df.tsv.gz`（`ind` 列 = 供者，另含作者注释与 doublet 标记）在同目录，是 06 pseudobulk 的 sample_id 来源 |
 | pbmc_1k_v3 FASTQ + GRCh38-2024-A | 10x 官网 | cellranger 真实数据练习 |
 | 基因集 gmt | MSigDB（KEGG/Hallmark/c7） | GSEA 与基因集打分 |
 

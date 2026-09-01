@@ -1,8 +1,8 @@
 ###############################################################################
-### 07_trajectory_analysis.R — 高级模块：拟时序分析（monocle3）
+### 08_trajectory_analysis.R — 高级模块：拟时序分析（monocle3）
 ###
 ### 输入：output/<batch>/03_annotate/seurat_annotated.rds（需 celltype 列与 umap 降维）
-### 输出：output/<batch>/07_trajectory_analysis/（轨迹图 + 伪时间图 + cds 对象 rds）
+### 输出：output/<batch>/08_trajectory_analysis/（轨迹图 + 伪时间图 + cds 对象 rds）
 ###
 ### ⚠️ 坑：irlba + OpenBLAS 多线程必段错误（实测 r-irlba 2.3.7 + OpenBLAS 0.3.33），
 ###        需 OPENBLAS_NUM_THREADS=1（run_pipeline.sh 已自动处理；RStudio/手动 Rscript
@@ -12,7 +12,7 @@
 
 source("utils/utils.R")
 cfg <- load_config()
-step_dir <- setup_step("07_trajectory_analysis")
+step_dir <- setup_step("08_trajectory_analysis")
 log_step("高级模块 | 拟时序分析（monocle3）")
 library(monocle3)
 library(SeuratWrappers)
@@ -119,4 +119,4 @@ if (cfg$mode == "multi") {
 # ---- 9. 保存 CDS 对象（供下游如拟时序差异基因分析）----
 saveRDS(cds, file = file.path(step_dir, "trajectory_cds.rds"))
 
-log_step("高级模块 | 拟时序分析完成 → 结果见 output/07_trajectory_analysis/")
+log_step("高级模块 | 拟时序分析完成 → 结果见 output/08_trajectory_analysis/")

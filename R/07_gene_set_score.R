@@ -1,13 +1,13 @@
 ###############################################################################
-### 06_gene_set_score.R — 高级模块：基因集打分（AddModuleScore 通路活性推断）
+### 07_gene_set_score.R — 高级模块：基因集打分（AddModuleScore 通路活性推断）
 ###
 ### 输入：output/<batch>/03_annotate/seurat_annotated.rds + config 的 advanced$gene_set_gmt
-### 输出：output/<batch>/06_gene_set_score/seurat_scored.rds + 通路打分 FeaturePlot
+### 输出：output/<batch>/07_gene_set_score/seurat_scored.rds + 通路打分 FeaturePlot
 ###############################################################################
 
 source("utils/utils.R")
 cfg <- load_config()
-step_dir <- setup_step("06_gene_set_score")
+step_dir <- setup_step("07_gene_set_score")
 log_step(paste("高级模块 B | 基因集打分 | 基因集文件:", cfg$advanced$gene_set_gmt))
 library(clusterProfiler)
 set.seed(123)   # ⚠️ AddModuleScore 随机抽样对照基因集，设种子保证打分可复现

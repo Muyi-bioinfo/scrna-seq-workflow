@@ -129,19 +129,21 @@ pill(51, 39.2, 10.5, 6, "Expression matrix", "barcodes·features·mtx")
 # ---- 带 B：核心 R 流程 ----
 band(19, 19, 80, 14.5, BLUE)
 band_label(20.5, 31.9, "CORE PIPELINE — R / SEURAT V5")
-bw, gap = 14.4, 1.5
-bx = [20.5 + i * (bw + gap) for i in range(5)]
+bw, gap = 11.75, 1.5
+bx = [20.5 + i * (bw + gap) for i in range(6)]
 by, bh = 20.4, 9.6
 box(bx[0], by, bw, bh, BLUE, "Load + QC",
     ["Read10X · merge", "QC filtering", "scDblFinder"], num="01")
-box(bx[1], by, bw, bh, BLUE, "Preprocess + Cluster",
+box(bx[1], by, bw, bh, BLUE, "Preprocess",
     ["Normalize · HVG · PCA", "harmony / RPCA / FastMNN", "UMAP · clustering"], num="02")
 box(bx[2], by, bw, bh, BLUE, "Annotate",
     ["FindAllMarkers", "marker presets", "evidence check"], num="03")
-box(bx[3], by, bw, bh, BLUE, "Multi-group plot",
+box(bx[3], by, bw, bh, BLUE, "Multi-group",
     ["cell proportions", "grouped DotPlot", "marker heatmap"], num="04")
 box(bx[4], by, bw, bh, BLUE, "DE + GSEA",
     ["FindMarkers", "compareCluster KEGG", "GSEA (fgsea)"], num="05")
+box(bx[5], by, bw, bh, BLUE, "Pseudobulk DE",
+    ["sample-level aggregation", "DESeq2 · paired design", "confirms exploratory 05"], num="06")
 
 # ---- 带 C：高级模块（可选）----
 band(19, 3, 80, 12.5, AQUA)
@@ -150,11 +152,11 @@ cw = 24.5
 cx = [20.5, 20.5 + cw + 3, 20.5 + 2 * (cw + 3)]
 cy, ch = 4.2, 8
 box(cx[0], cy, cw, ch, AQUA, "Gene-set scoring",
-    ["AddModuleScore · pathway activity", "per-signature FeaturePlot"], num="06", dashed=True)
+    ["AddModuleScore · pathway activity", "per-signature FeaturePlot"], num="07", dashed=True)
 box(cx[1], cy, cw, ch, AQUA, "Trajectory — monocle3",
-    ["pseudotime · lineage presets", "root cell type · raw / harmony / umap"], num="07", dashed=True)
+    ["pseudotime · lineage presets", "root cell type · raw / harmony / umap"], num="08", dashed=True)
 box(cx[2], cy, cw, ch, AQUA, "Cell communication",
-    ["CellChat · ligand–receptor DB", "STIM vs CTRL comparison"], num="08", dashed=True)
+    ["CellChat · ligand–receptor DB", "STIM vs CTRL comparison"], num="09", dashed=True)
 
 # ---- 箭头 ----
 cy_a = 42.2   # 带 A 中线
@@ -163,7 +165,7 @@ arrow((46.5, cy_a), (51.0, cy_a))
 # 矩阵 → 01（折线走 config 面板与带之间的空隙，从 01 左侧边进入，避免压住带标签）
 elbow([(56.25, 39.2), (56.25, 36.2), (18.2, 36.2), (18.2, 25.2), (20.5, 25.2)])
 cy_b = 25.2   # 带 B 中线
-for i in range(4):
+for i in range(5):
     arrow((bx[i] + bw, cy_b), (bx[i + 1], cy_b))
 # 03 → 高级模块三扇（虚线 = 可选；止于带 C 上边线，不伸入带内压住标签）
 fan_x = [cx[0] + cw / 2, cx[1] + cw / 2, cx[2] + cw / 2]

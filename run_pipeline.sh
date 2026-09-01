@@ -63,12 +63,12 @@ case $MODE in
   single)
     STEPS=("01_load_qc" "02_preprocess_cluster" "03_annotate") ;;
   multi)
-    STEPS=("01_load_qc" "02_preprocess_cluster" "03_annotate" "04_multi_group_plot" "05_diff_gsea") ;;
+    STEPS=("01_load_qc" "02_preprocess_cluster" "03_annotate" "04_multi_group_plot" "05_diff_gsea" "06_pseudobulk_de") ;;
   *)
     echo "未知模式: $MODE（支持 single / multi）"; exit 1 ;;
 esac
 if [[ "$WITH_ADVANCED" == true ]]; then
-  STEPS+=("06_gene_set_score" "07_trajectory_analysis" "08_cell_communication")
+  STEPS+=("07_gene_set_score" "08_trajectory_analysis" "09_cell_communication")
 fi
 
 # ---- 批次（每次运行完全自包含归档到 output/<batch>/）----
@@ -93,6 +93,12 @@ echo "使用 Rscript: $($RSCRIPT --version 2>&1 | head -1)"
 mkdir -p "$LOGDIR" "$OUTBATCH"
 cp "$CONFIG_FILE" "$OUTBATCH/config_used.yaml"   # 参数快照：这个批次是用什么参数跑出来的
 echo "批次: $BATCH（结果与日志 → $OUTBATCH/）"
+
+# ⚠️ BLAS 单线程固定（全步骤）：irlba（Seurat RunPCA、monocle3 preprocess）在
+# OpenBLAS 多线程下段错误（实测 r-irlba 2.3.7 + OpenBLAS 0.3.33，最初在 07 拟时序
+# 触发；2026-09-01 装 deseq2/apeglm 刷新环境后 02 的 RunPCA 也触发）。R 内
+# Sys.setenv 无效，必须 shell 层设置；宁可损失一点多线程速度也不中途段错误
+export OPENBLAS_NUM_THREADS=1
 
 # ---- 步骤过滤参数格式校验：支持数字序号（04）或完整步骤名（04_multi_group_plot）----
 for arg_name in FROM TO ONLY; do
@@ -132,14 +138,6 @@ for step in "${STEPS[@]}"; do
 
   echo ""
   echo "▶ ▶ ▶ 运行 $step"
-  # ⚠️ 07 拟时序：monocle3 → irlba fastpath 在 OpenBLAS 多线程下会段错误
-  #（实测 r-irlba 2.3.7 + OpenBLAS 0.3.33），该步骤单独限制单线程 BLAS，
-  # 不影响其他步骤的多线程性能
-  if [[ "$step" == "07_trajectory_analysis" ]]; then
-    export OPENBLAS_NUM_THREADS=1
-  else
-    unset OPENBLAS_NUM_THREADS 2>/dev/null || true
-  fi
   if $RSCRIPT "R/${step}.R" > "$LOGDIR/${step}.log" 2>&1; then
     touch "$OUTBATCH/$step/.done"
     echo "✔ $step 完成（日志: $LOGDIR/${step}.log）"

@@ -128,4 +128,4 @@ if (!is.null(ident_compare) && nzchar(ident_compare)) {
   }
 }
 
-log_step("模块 9 完成 —— 全流程结束！结果见 output/ 各步骤目录")
+log_step("模块 9 完成（探索性 DE + GSEA）→ 下一步: Rscript R/06_pseudobulk_de.R（sample-aware 确认性 DE）")

@@ -36,10 +36,11 @@ scrna-seq-workflow/
 │   ├── 02_preprocess_cluster.R  # 预处理 + 去批次 + UMAP + 聚类
 │   ├── 03_annotate.R            # 细胞注释 + 亚群细分（config 开关）
 │   ├── 04_multi_group_plot.R    # 多组可视化
-│   ├── 05_diff_gsea.R           # 差异分析 + GSEA
-│   ├── 06_gene_set_score.R      # 高级：基因集打分
-│   ├── 07_trajectory_analysis.R # 高级：拟时序（monocle3）
-│   └── 08_cell_communication.R  # 高级：细胞通讯（CellChat）
+│   ├── 05_diff_gsea.R           # 探索性差异分析 + GSEA（细胞为统计单元）
+│   ├── 06_pseudobulk_de.R       # 确认性差异分析：pseudobulk + DESeq2（sample-aware）
+│   ├── 07_gene_set_score.R      # 高级：基因集打分
+│   ├── 08_trajectory_analysis.R # 高级：拟时序（monocle3）
+│   └── 09_cell_communication.R  # 高级：细胞通讯（CellChat）
 ├── Python/                      # Python 流程（规划中：scanpy 平行版本，见 Python/README.md）
 ├── docs/                        # 流程文档 / cellranger 指南 / R 包编译踩坑
 ├── utils/                       # 共享工具：utils.R（配置/归档/质控/预处理/聚类）
@@ -129,7 +130,7 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 | 数据集 | 来源 | 用途 |
 |---|---|---|
 | PBMC 3k（hg19 三件套） | 10x 官网 | 单样本流程 |
-| STIM/CTRL 表达矩阵 | GSE96583（IFN-β 刺激 PBMC） | 多样本整合 + 差异 + GSEA |
+| STIM/CTRL 表达矩阵 | GSE96583（IFN-β 刺激 PBMC） | 多样本整合 + 差异 + GSEA + pseudobulk 差异 |
 | pbmc_1k_v3 FASTQ + GRCh38-2024-A 参考基因组 | 10x 官网 | cellranger 真实数据练习 |
 
 下载位置与目录组织：见 [docs/01_pipeline_overview.md](docs/01_pipeline_overview.md) 末尾的数据来源一节。
@@ -147,9 +148,10 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 | 03 注释（+ 亚群细分） | `seurat_annotated.rds`, `all_markers_table.rds`, `top10_markers.csv`, `annotation_evidence.csv` | `dimplot_annotated`, `dotplot_markers_by_cluster`, `featureplot_celltypes/` |
 | 04 多组可视化 | 仅图片 | `barplot_cell_proportion`, `dotplot_grouped`, `heatmap_top5_markers` |
 | 05 差异 + GSEA | `split_markers.rds`, `diff_stim_vs_ctrl.rds` | `compareCluster_dotplot`, `gsea_kegg_dotplot`, `gsea_hallmark_dotplot` |
-| 06 基因集打分 | `seurat_scored.rds` | `featureplot_<pathway>`（每条通路一张） |
-| 07 拟时序 | `trajectory_cds.rds`, `trajectory_resolved.yaml`（参数快照） | `trajectory_pseudotime`, `trajectory_celltype`, `trajectory_by_group` |
-| 08 细胞通讯 | `cellchat.rds`（单样本）/ `cellchat_list.rds`（多样本） | `compare_interaction_counts`, `diff_network_all`, `ranknet_pathway_comparison` |
+| 06 pseudobulk 差异 | `summary_degs.csv`，逐类型 `deseq2_results.tsv` + `significant_degs.tsv` | 逐类型 `volcano`/`MAplot`/`PCA`，顶层 `summary_05_vs_06`、`all_types_pca` |
+| 07 基因集打分 | `seurat_scored.rds` | `featureplot_<pathway>`（每条通路一张） |
+| 08 拟时序 | `trajectory_cds.rds`, `trajectory_resolved.yaml`（参数快照） | `trajectory_pseudotime`, `trajectory_celltype`, `trajectory_by_group` |
+| 09 细胞通讯 | `cellchat.rds`（单样本）/ `cellchat_list.rds`（多样本） | `compare_interaction_counts`, `diff_network_all`, `ranknet_pathway_comparison` |
 
 ## 关键踩坑记录
 
@@ -163,10 +165,11 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 | GSEA 结果不可复现 | GSEA 用随机置换算 p 值 | `set.seed(123)` |
 | 单样本/多样本注释映射混用 | 不同数据集分群数和细胞类型不同 | 配置 profile 分离：config.yaml / config.multi.yaml |
 | 重跑后 cluster_map 贴错群（如 CD14 Mono 与 naive T 互换） | 聚类编号是 Louvain 社群发现顺序（任意标签），上游脚本/参数/环境一改，编号整体重排而群本身不变（2026-08-21 run02 事故） | ① 03 的 `check_mapping_evidence()` 机器校验：贴错群会 warning + 证据表 `annotation_evidence.csv` ② 聚类链路已固定种子（`cluster_cells()` 内 set.seed + `random.seed=42`），同输入必同编号 ③ 验证性重跑换 batch 名保留旧批次对照 |
-| monocle3 `preprocess_cds` 段错误 | irlba fastpath + OpenBLAS 多线程竞态（实测 r-irlba 2.3.7 + OpenBLAS 0.3.33） | run_pipeline.sh 对 07 步骤单独 `OPENBLAS_NUM_THREADS=1`（R 内 `Sys.setenv` 无效，必须 shell 层） |
+| irlba 段错误（monocle3 `preprocess_cds`；2026-09-01 环境刷新后 02 的 `RunPCA` 也触发） | irlba + OpenBLAS 多线程竞态（实测 r-irlba 2.3.7 + OpenBLAS 0.3.33） | run_pipeline.sh 对所有 R 步骤统一 `OPENBLAS_NUM_THREADS=1`（R 内 `Sys.setenv` 无效，必须 shell 层） |
 | `order_cells` 报 "root_pr_nodes or root_cells must be provided" | Rscript 非交互模式无法弹窗选根（RStudio 交互才会弹） | 谱系预设显式指定根（config/trajectory_presets/） |
 | 全细胞混跑轨迹 30% 细胞伪时间 Inf | 异构细胞类型间不存在连续轨迹，图不连通 | 谱系预设子集（如仅 T 细胞），run02 验证 Inf=0 |
 | FeaturePlot 与 DimPlot 布局不一致 | `umap_naive` 抢占默认降维（DefaultDimReduc 按名匹配），FeaturePlot 不显式指定时画在校正前的图上 | 所有 FeaturePlot 显式 `reduction = "umap"` |
+| 组间"显著 DEG"数量虚高（STIM vs CTRL 动辄上千个） | `FindAllMarkers`/`FindMarkers` 把每个细胞当独立观测，而同一供者的细胞彼此相关——伪重复（GSE96583 是 8 供者配对数据） | 用 `06_pseudobulk_de.R` 确认：原始 counts 按 供者×细胞类型 聚合，DESeq2 把供者作 blocking 因子；同阈值对照落在 `summary_degs.csv` |
 
 ## 仓库范围与数据获取
 
@@ -182,14 +185,14 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 - ⚠️ 4 个包需从 GitHub 安装（conda 渠道无，见 yaml 头部注释）：SeuratWrappers、CellChat（必需）+ presto、scCustomize（可选）
 - cellranger 9.0.1（独立软件，非 R 包，见 docs/02_cellranger_guide.md）
 
-### 高级模块依赖（跑 07/08 前检查）
+### 高级模块依赖（跑 08/09 前检查）
 
 ```bash
-# 07 拟时序：monocle3 已安装并全量验证（run02 批次，T 细胞谱系预设）
+# 08 拟时序：monocle3 已安装并全量验证（run02 批次，T 细胞谱系预设）
 #   安装：mamba install -c conda-forge -c bioconda r-monocle3
 #   注意：运行需单线程 BLAS（run_pipeline.sh 已自动处理，见踩坑表）
 
-# 08 细胞通讯：CellChat 2.2.0.9001 已安装（GitHub 源码编译；CRAN 已下架）
+# 09 细胞通讯：CellChat 2.2.0.9001 已安装（GitHub 源码编译；CRAN 已下架）
 #   安装方式（备查）：devtools::install_github("jinworks/CellChat")
 #   编译要点见 docs/03_r_package_compile.md（conda 环境 + R 4.5 头文件）
 ```

@@ -6,7 +6,7 @@
 #
 # ⚠️ 以下包不在 conda 渠道，创建环境后需从 GitHub 安装（详见 README「环境」一节）：
 #   SeuratWrappers 必需（整合分析）: remotes::install_github("satijalab/seurat-wrappers")
-#   CellChat       必需（08 细胞通讯）: remotes::install_github("jinworks/CellChat")
+#   CellChat       必需（09 细胞通讯）: remotes::install_github("jinworks/CellChat")
 #                    （R 4.5 源码编译踩坑见 docs/03_r_package_compile.md）
 #   presto         可选（FindAllMarkers 加速，Seurat 自动检测）
 #                    : remotes::install_github("immunogenomics/presto")
@@ -36,3 +36,5 @@ dependencies:
   - bioconductor-clusterprofiler # 富集分析（GSEA）
   - bioconductor-enrichplot
   - bioconductor-org.hs.eg.db    # 人类基因注释数据库
+  - bioconductor-deseq2          # pseudobulk 确认性差异分析（06）
+  - bioconductor-apeglm          # DESeq2 logFC 收缩（06 展示列；缺 ashr 亦可回退）

@@ -486,7 +486,9 @@ for (ct in cts_all) {
                                                       c(ref_grp, test_grp))),
         main = paste0(ct, " — top ", nrow(hm), " DEGs"),
         color = colorRampPalette(c(PAL_DOWN, "#f5f5f2", PAL_UP))(100),   # 发散对：蓝→白→红
-        fontsize = 8, fontsize_row = 6, border_color = NA),
+        fontsize = 8, fontsize_row = 6, fontsize_col = 6,
+        angle_col = 90,   # 列标签从下往上读（默认 270 从上往下读，别扭；16 列时 45° 会挤）
+        border_color = NA),
       "heatmap", width = 8, height = 7)
   } else if (length(top_deg) < 2) {
     message("-- ", ct, " 显著 DEG 不足 2 个，跳过热图")

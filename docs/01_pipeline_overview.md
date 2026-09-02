@@ -132,6 +132,47 @@ RunUMAP → FindNeighbors（KNN → SNN 图）→ FindClusters（resolution 越�
 - **守卫**：`min_cells`（pseudobulk 最小细胞数）、每组最少样本数、残差自由度（配对设计下 2v2 会参数饱和）；不满足的类型跳过并记入 `summary_degs.csv` 的 skip_reason
 - **结果判读**：05 是探索层、06 是确认层——同 padj 阈值下 06 的显著 DEG 应**更少更保守**，顶层 `summary_degs.csv` 与 `summary_05_vs_06.pdf` 直接对照。全基因结果（含独立过滤 padj=NA 行的 stat）保留，`run_gsea: true` 时按 Wald stat 排序喂 GSEA（复用 diff_gsea 的 gmt）
 
+### 设计决策（06 pseudobulk）
+
+**为什么选择 DESeq2？**
+- **vs edgeR**：两者在低重复数 RNA-seq 数据上性能相近（Soneson & Robinson, 2016, F1000Research），DESeq2 的 `lfcShrink`（apeglm）对低表达基因的 log2FC 收缩更保守，减少假阳性
+- **vs limma-voom**：voom 假设方差-均值关系为 log-linear，bulk RNA-seq 数据上表现优异，但 pseudobulk 的计数分布更接近负二项（低重复数 + 高离散度），DESeq2 的负二项 GLM 更契合
+- **vs MAST**（单细胞原生方法）：MAST 在聚合数据（pseudobulk）上结果与 DESeq2 类似，但速度慢得多（需逐细胞建模再聚合）；pseudobulk 场景下 DESeq2 是主流选择
+- **配对设计支持**：DESeq2 原生支持 `~ sample_id + condition` 配对设计，同一供者作 blocking 因子吸收个体差异，这是 GSE96583（8 供者配对数据）的统计要害
+
+**为什么自动剔除单臂供者？**
+- 配对 design `~ sample_id + condition` 要求每个供者在 ≥2 组都有合格 pseudobulk（≥ min_cells 细胞）
+- 单臂供者（只在一组有数据）只增加模型参数、不增加配对信息 → 浪费残差自由度，参数饱和
+- **实战收益**：低丰度细胞类型（如 cDC、pDC）常因单臂供者导致自由度不足而拟合失败；自动剔除可救活这些类型，summary 的 `n_pseudobulk_ref/test` 记录剔除后实际建模样本数
+
+**为什么逐类型独立建模？**
+- 不同细胞类型的基因表达模式、离散度、处理响应异质性极大，混在一起建模会稀释真实信号
+- 独立建模允许每个类型有自己的 dispersion 估计和统计阈值
+- 缺点：无法直接比较"哪个类型响应最强"（需后续 meta-analysis），但单类型内的 DE 结果更可靠
+
+**已知局限**
+
+1. **当前只支持双组对比**（STIM vs CTRL）
+   - 3+ 组需要修改 contrast 提取逻辑（如 A vs B、A vs C、B vs C 三个对比）
+   - 时间序列/剂量响应设计需要 likelihood ratio test（LRT）而非默认 Wald test
+
+2. **要求 sample_id 列**
+   - 01 必须写入 `sample_id`（样本表每行或 `multi$cell_metadata` join）
+   - 缺失时 06 会报错退出（单样本数据无法做 pseudobulk，min_samples_per_group 守卫会拦截）
+
+3. **最小样本数要求**
+   - 当前默认 `min_samples_per_group: 2`（每组至少 2 个 pseudobulk）
+   - 配对设计建议 **≥3/组**（Schurch 2016, RNA: 2v2 只能检出极强信号，3v3 可检出 FDR<5% 的中等效应）
+   - 非配对设计可接受 2v2，但统计功效仍偏弱
+
+4. **丢失单细胞分辨率**
+   - Pseudobulk 聚合后无法研究细胞异质性、轨迹、细胞间通讯
+   - 只用于**差异基因的样本级确认**，探索性分析（亚群发现、marker 鉴定）仍需 05 的单细胞口径
+
+5. **batch 列的混淆检测是启发式**
+   - 当前逻辑：batch 与 condition 完全嵌套（每个 batch 只有一个 condition）时判定为混淆，退出 design
+   - 部分嵌套场景（如 batch1 有 A/B，batch2 只有 A）可能误判或拟合不稳定
+
 ## 高级模块（run_pipeline.sh --with-advanced）
 
 - **07 基因集打分**：AddModuleScore（基因集 vs 随机对照集的平均表达差，推断通路活性）；UCell/AUCell 等基于排名的方法见扩展学习脚本（未随本仓库上传）

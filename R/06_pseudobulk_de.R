@@ -180,28 +180,112 @@ if (!is.null(batch_col) && batch_col %in% colnames(meta)) {
 write.table(pb_meta, file = file.path(step_dir, "pseudobulk_metadata.tsv"),
             sep = "\t", quote = FALSE, row.names = FALSE)
 
+# ---- 图形样式（期刊风）----
+# 调色板与 docs/assets/make_pipeline_figure.py 同一体系（经 CVD/对比度校验）：
+#   上/下调用发散对（暖红/冷蓝），不显著用中性灰退到背景；
+#   条件色（PCA/椭圆）用分类槽 1/2（冷蓝 = 对照，暖橙 = 刺激，与 volcan
+# 语义同向：暖 = 刺激方向）。文字一律墨色，不借颜色传义
+PAL_UP <- "#e34948"; PAL_DOWN <- "#2a78d6"; PAL_NS <- "#c3c2b7"
+PAL_CTRL <- "#2a78d6"; PAL_STIM <- "#eb6834"
+PAL_AQUA <- "#1baf7a"   # 分类槽 3：单序列图（无方向语义，如供者响应 PCA）
+INK <- "#0b0b0b"; INK2 <- "#52514e"; MUTED <- "#898781"
+HAIR <- "#e1e0d9"; BASELINE <- "#c3c2b7"; SURFACE <- "#fcfcfb"
+
+#' 统一主题：浅色面板 + 发丝网格 + 顶部图例，去默认灰底
+theme_pb <- function(base_size = 11) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = HAIR, linewidth = 0.3),
+      axis.line = element_line(color = BASELINE, linewidth = 0.4),
+      axis.text = element_text(color = INK),
+      axis.title = element_text(color = INK2),
+      plot.title = element_text(face = "bold", size = base_size + 1),
+      plot.background = element_rect(fill = SURFACE, color = NA),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.key.size = grid::unit(10, "pt")
+    )
+}
+
+#' 样本层 PCA（期刊风）：条件着色 + 90% 正态椭圆 + 供者标签（ggrepel）。
+#' 小分组（<3 点）自动跳过椭圆（stat_ellipse 会在 2 点时报错）
+plot_pb_pca <- function(df, pve, title) {
+  # 图例不带样本数：单臂供者剔除保证进 PCA 的样本必然配对等数（每个供者双条件齐全）
+  cond_levels <- c(ref_grp, test_grp)
+  p <- ggplot(df, aes(x = PC1, y = PC2, color = condition)) +
+    geom_point(size = 3, alpha = 0.9) +
+    scale_color_manual(values = setNames(c(PAL_CTRL, PAL_STIM), cond_levels)) +
+    labs(title = title,
+         x = sprintf("PC1 · %.1f%% variance", 100 * pve[1]),
+         y = sprintf("PC2 · %.1f%% variance", 100 * pve[2])) +
+    theme_pb()
+  if (min(table(df$condition)) >= 3) {
+    p <- p + stat_ellipse(type = "norm", level = 0.9,
+                          linetype = "dashed", linewidth = 0.5)
+  }
+  if (requireNamespace("ggrepel", quietly = TRUE)) {
+    p <- p + ggrepel::geom_text_repel(aes(label = sample_id), size = 2.8, color = INK,
+                                      max.overlaps = 20, segment.color = MUTED,
+                                      segment.size = 0.3, box.padding = 0.3)
+  }
+  p
+}
+
 # ---- 5. 全局样本层 PCA（QC）：组分离与供者离群一眼可见 ----
 #' 取 top 高变 pseudobulk 做 PCA，返回得分与解释度
-pca_scores <- function(mat, ntop = 2000) {
-  mat <- log2(as.matrix(mat) + 1)
+pca_scores <- function(mat, ntop = 2000, log = TRUE) {
+  mat <- as.matrix(mat)
+  if (log) mat <- log2(mat + 1)   # 差异矩阵（log = FALSE）已是对数空间，不能再取 log
   v <- apply(mat, 1, var)
   mat <- mat[order(v, decreasing = TRUE), , drop = FALSE]
   mat <- mat[seq_len(min(ntop, nrow(mat))), , drop = FALSE]
   pc <- prcomp(t(mat), center = TRUE, scale. = TRUE)
   list(df = as.data.frame(pc$x), pve = summary(pc)$importance[2, ])
 }
+# ---- 5. 供者级配对差异 PCA ----
+# 逐类型 PCA 回答"类型内条件分离"，本图回答"响应在供者间是否一致"：
+# 每个供者把所有类型合并成一个 bulk（STIM 侧 vs CTRL 侧），取 log2 差异向量做 PCA——
+# 一个点 = 一个供者的整体响应方向。8 个点同向 = 响应跨个体一致；离群点 = 生物异质性
 if (nrow(pb_meta) >= 6) {
-  pcs <- pca_scores(counts_pb[, pb_meta$pseudobulk_id])   # counts_pb 已是 基因×样本
-  pcs$df$condition <- pb_meta$condition   # 颜色分组（pca_scores 只返回坐标）
-  pcs$df$sample_id <- as.character(pb_meta$sample_id)   # 供者标签（复合键拆出的干净 id）
-  p <- ggplot(pcs$df, aes(x = PC1, y = PC2, color = condition)) +
-    geom_point(size = 3, alpha = 0.85) +
-    geom_text(aes(label = sample_id), vjust = -0.9, size = 2.6, show.legend = FALSE) +
-    labs(x = sprintf("PC1 (%.1f%%)", 100 * pcs$pve[1]),
-         y = sprintf("PC2 (%.1f%%)", 100 * pcs$pve[2]),
-         title = "Pseudobulk samples (all celltypes, log2 counts PCA)") +
-    theme_bw()
-  save_fig(p, "all_types_pca")
+  # 每个 (供者, 条件) 的跨类型求和：小指示矩阵聚合 counts_pb 的列。
+  # ⚠️ 先与 pb_meta 对齐：pb_meta 已过滤（min_cells/未知组），counts_pb 仍是全列
+  counts_kept <- counts_pb[, pb_meta$pseudobulk_id, drop = FALSE]
+  key_dc <- paste(pb_meta$sample_id, pb_meta$condition, sep = "\01")
+  kd_fact <- factor(key_dc)
+  ind_dc <- Matrix::sparseMatrix(i = as.integer(kd_fact), j = seq_along(key_dc),
+                                 x = rep(1, length(key_dc)),
+                                 dims = c(nlevels(kd_fact), length(key_dc)),
+                                 dimnames = list(levels(kd_fact), pb_meta$pseudobulk_id))
+  donor_counts <- as.matrix(ind_dc %*% t(counts_kept))   # (供者×条件) × 基因
+
+  # 只保留双条件齐全的供者，算 STIM−CTRL 的 log2 差异向量
+  donors <- sort(unique(as.character(pb_meta$sample_id)))
+  have_both <- vapply(donors, function(d) {
+    all(c(paste(d, test_grp, sep = "\01"), paste(d, ref_grp, sep = "\01")) %in%
+          rownames(donor_counts))
+  }, logical(1))
+  donors <- donors[have_both]
+  diff_mat <- vapply(donors, function(d) {
+    log2(donor_counts[paste(d, test_grp, sep = "\01"), ] + 1) -
+      log2(donor_counts[paste(d, ref_grp, sep = "\01"), ] + 1)
+  }, numeric(ncol(donor_counts)))   # 基因 × 供者
+  colnames(diff_mat) <- donors
+
+  pcs <- pca_scores(diff_mat, log = FALSE)   # 差异已在对数空间
+  pcs$df$sample_id <- rownames(pcs$df)
+  p <- ggplot(pcs$df, aes(x = PC1, y = PC2)) +
+    geom_point(size = 3.5, color = PAL_AQUA, alpha = 0.9) +
+    labs(title = "Donor-level response — per-donor STIM vs CTRL log2 fold-change",
+         x = sprintf("PC1 · %.1f%% variance", 100 * pcs$pve[1]),
+         y = sprintf("PC2 · %.1f%% variance", 100 * pcs$pve[2])) +
+    theme_pb()
+  if (requireNamespace("ggrepel", quietly = TRUE)) {
+    p <- p + ggrepel::geom_text_repel(aes(label = sample_id), size = 3, color = INK,
+                                      max.overlaps = 20, segment.color = MUTED,
+                                      segment.size = 0.3, box.padding = 0.3)
+  }
+  save_fig(p, "donor_response_pca")
 }
 
 # ---- 6. GSEA 预备（可选；默认关）----
@@ -274,6 +358,9 @@ for (ct in cts_all) {
       message("-- 剔除单臂供者 ", length(single_arm), " 个（无配对信息）: ",
               paste(single_arm, collapse = ", "))
       sub_meta <- droplevels(sub_meta[!sub_meta$sample_id %in% single_arm, , drop = FALSE])
+      # summary 记录最终建模用的样本数（剔除后必然配对等数，此前记的是剔除前数字）
+      row$n_pseudobulk_ref <- sum(sub_meta$condition == ref_grp)
+      row$n_pseudobulk_test <- sum(sub_meta$condition == test_grp)
     }
   }
 
@@ -363,29 +450,54 @@ for (ct in cts_all) {
   saveRDS(list(counts = cnt, colData = sub_meta, design = row$design),
           file = file.path(ct_dir, "pseudobulk_counts.rds"))
 
-  # 火山图（手写 ggplot：不引入 EnhancedVolcano，配色与仓库其余图统一）
+  # 火山图（期刊风）：发散对（暖红上调/冷蓝下调）+ 中性灰不显著点；标签墨色
   vd <- res_df[!is.na(res_df$padj) & is.finite(res_df[[lfc_col]]), , drop = FALSE]
-  vd$cat <- ifelse(vd$padj < padj_cut & vd[[lfc_col]] >= lfc_cut, "Up",
-            ifelse(vd$padj < padj_cut & vd[[lfc_col]] <= -lfc_cut, "Down", "NS"))
-  vd$cat <- factor(vd$cat, levels = c("Down", "NS", "Up"))
+  vd$cat <- factor(ifelse(vd$padj < padj_cut & vd[[lfc_col]] >= lfc_cut, "Up",
+                   ifelse(vd$padj < padj_cut & vd[[lfc_col]] <= -lfc_cut, "Down", "NS")),
+                   levels = c("Down", "NS", "Up"))
+  vd$mlog10p <- pmin(-log10(vd$padj), 350)   # -log10(padj) 截断（极显著基因拉爆坐标轴）
   sig_idx <- which(vd$cat != "NS")
   lab <- head(vd[sig_idx[order(vd$padj[sig_idx])], , drop = FALSE], 10)   # top10 显著基因标签
-  p <- ggplot(vd, aes(x = .data[[lfc_col]], y = -log10(padj), color = cat)) +
-    geom_point(size = 0.7, alpha = 0.6) +
-    geom_vline(xintercept = c(-lfc_cut, lfc_cut), linetype = "dashed", color = "grey40") +
-    geom_hline(yintercept = -log10(padj_cut), linetype = "dashed", color = "grey40") +
-    scale_color_manual(values = c(Up = "#C0392B", Down = "#2E86C1", NS = "grey70"), drop = FALSE) +
-    labs(title = ct, x = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
-         y = "-log10(adjusted p)", color = NULL) +
-    theme_bw()
+  # 分层绘制：NS 先画（更小更淡，退到背景），显著点后画（更实，压在最上）——防灰点淹没显著点
+  p <- ggplot(vd, aes(x = .data[[lfc_col]], y = mlog10p, color = cat)) +
+    geom_point(data = vd[vd$cat == "NS", , drop = FALSE], size = 0.5, alpha = 0.25) +
+    geom_point(data = vd[vd$cat != "NS", , drop = FALSE], size = 0.9, alpha = 0.75) +
+    geom_vline(xintercept = c(-lfc_cut, lfc_cut), linetype = "dashed",
+               color = BASELINE, linewidth = 0.5) +
+    geom_hline(yintercept = -log10(padj_cut), linetype = "dashed",
+               color = BASELINE, linewidth = 0.5) +
+    scale_color_manual(values = c(Up = PAL_UP, Down = PAL_DOWN, NS = PAL_NS), drop = FALSE) +
+    labs(title = ct,
+         subtitle = sprintf("Up %d · Down %d", sum(vd$cat == "Up"), sum(vd$cat == "Down")),
+         x = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
+         y = expression(-log[10]~adjusted~italic(P)), color = NULL) +
+    theme_pb()
   if (nrow(lab) > 0 && requireNamespace("ggrepel", quietly = TRUE)) {
-    p <- p + ggrepel::geom_text_repel(data = lab, aes(label = gene), size = 2.6,
-                                      max.overlaps = 20, show.legend = FALSE)
+    p <- p + ggrepel::geom_text_repel(data = lab, aes(label = gene), size = 2.8,
+                                      color = INK, max.overlaps = 20,
+                                      segment.color = MUTED, segment.size = 0.3,
+                                      box.padding = 0.3, show.legend = FALSE)
   }
   save_fig(p, "volcano", type = "volcano")
 
-  # MA 图：plotMA 直接绘制不返回对象 → save_fig_draw（设备内求值，见 save_fig.R 说明）
-  save_fig_draw(DESeq2::plotMA(dds, alpha = padj_cut), "MAplot", width = 7, height = 6)
+  # MA 图（期刊风 ggplot 版）：x = log10(baseMean) 看计数深度，y = 收缩 log2FC；
+  # 不显著点退灰，阈值线为虚线基线色
+  ma_df <- res_df[is.finite(res_df$baseMean) & is.finite(res_df[[lfc_col]]), , drop = FALSE]
+  ma_df$log10mean <- log10(ma_df$baseMean + 1)
+  ma_df$cat <- factor(ifelse(ma_df$sig & ma_df[[lfc_col]] > 0, "Up",
+                      ifelse(ma_df$sig & ma_df[[lfc_col]] < 0, "Down", "NS")),
+                      levels = c("Down", "NS", "Up"))
+  p <- ggplot(ma_df, aes(x = log10mean, y = .data[[lfc_col]], color = cat)) +
+    geom_point(size = 0.8, alpha = 0.55) +
+    geom_hline(yintercept = 0, color = BASELINE, linewidth = 0.5) +
+    geom_hline(yintercept = c(-lfc_cut, lfc_cut), linetype = "dashed",
+               color = BASELINE, linewidth = 0.5) +
+    scale_color_manual(values = c(Up = PAL_UP, Down = PAL_DOWN, NS = PAL_NS), drop = FALSE) +
+    labs(title = ct, x = expression(log[10]~mean~normalized~counts),
+         y = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
+         color = NULL) +
+    theme_pb()
+  save_fig(p, "MAplot", width = 7, height = 6)
 
   # 样本层 PCA：优先 vst + plotPCA(returnData)（官方变换），失败退回 log2 计数 PCA
   pc_src <- tryCatch({
@@ -397,25 +509,12 @@ for (ct in cts_all) {
   })
   if (!is.null(pc_src)) {
     pc_src$sample_id <- as.character(sub_meta$sample_id)   # plotPCA 行序与 colData 一致
-    pve <- attr(pc_src, "percentVar")
-    p <- ggplot(pc_src, aes(x = PC1, y = PC2, color = condition)) +
-      geom_point(size = 3, alpha = 0.85) +
-      geom_text(aes(label = sample_id), vjust = -0.9, size = 2.6, show.legend = FALSE) +
-      labs(x = sprintf("PC1: %.1f%% variance", 100 * pve[1]),
-           y = sprintf("PC2: %.1f%% variance", 100 * pve[2]), title = ct) +
-      theme_bw()
-    save_fig(p, "PCA")
+    save_fig(plot_pb_pca(pc_src, attr(pc_src, "percentVar"), ct), "PCA")
   } else {
     pcs <- pca_scores(cnt)   # cnt 已是 基因×样本，pca_scores 正期待这个方向
     pcs$df$condition <- sub_meta$condition
     pcs$df$sample_id <- as.character(sub_meta$sample_id)
-    p <- ggplot(pcs$df, aes(x = PC1, y = PC2, color = condition)) +
-      geom_point(size = 3, alpha = 0.85) +
-      geom_text(aes(label = sample_id), vjust = -0.9, size = 2.6, show.legend = FALSE) +
-      labs(x = sprintf("PC1 (%.1f%%)", 100 * pcs$pve[1]),
-           y = sprintf("PC2 (%.1f%%)", 100 * pcs$pve[2]), title = ct) +
-      theme_bw()
-    save_fig(p, "PCA")
+    save_fig(plot_pb_pca(pcs$df, pcs$pve, ct), "PCA")
   }
 
   # 可选 GSEA：全基因按 Wald stat 排序（stat = logFC/SE，低计数噪声基因天然被压后）
@@ -506,10 +605,11 @@ if (nrow(cmp) > 0) {
   p <- ggplot(cmp_long, aes(x = celltype, y = n, fill = method)) +
     geom_col(position = position_dodge(width = 0.8), width = 0.7) +
     coord_flip() +
-    scale_fill_manual(values = c("#95A5A6", "#C0392B")) +
+    scale_fill_manual(values = c("single-cell FindMarkers (cell-level)" = PAL_CTRL,
+                                 "pseudobulk DESeq2 (sample-level)" = PAL_STIM)) +
     labs(y = paste0("显著 DEG 数（padj<", padj_cut, ", ", test_grp, " 上调）"), x = NULL,
          title = "Same-contrast DEG counts: cell-level vs sample-level inference") +
-    theme_bw()
+    theme_pb()
   save_fig(p, "summary_05_vs_06", type = "barplot")
 }
 

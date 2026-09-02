@@ -164,7 +164,7 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 | 03 注释（+ 亚群细分） | `seurat_annotated.rds`, `all_markers_table.rds`, `top10_markers.csv`, `annotation_evidence.csv` | `dimplot_annotated`, `dotplot_markers_by_cluster`, `featureplot_celltypes/` |
 | 04 多组可视化 | 仅图片 | `barplot_cell_proportion`, `dotplot_grouped`, `heatmap_top5_markers` |
 | 05 差异 + GSEA | `split_markers.rds`, `diff_stim_vs_ctrl.rds` | `compareCluster_dotplot`, `gsea_kegg_dotplot`, `gsea_hallmark_dotplot` |
-| 06 pseudobulk 差异 | `summary_degs.csv`，`by_celltype/<type>/`（`deseq2_results.tsv` + `significant_degs.tsv`） | `figures/<type>/`（`volcano`/`MAplot`/`PCA`），顶层 `summary_05_vs_06`、`all_types_pca` |
+| 06 pseudobulk 差异 | `summary_degs.csv`，`by_celltype/<type>/`（`deseq2_results.tsv` + `significant_degs.tsv`） | `figures/<type>/`（`volcano`/`MAplot`/`PCA`），顶层 `summary_05_vs_06`、`donor_response_pca` |
 | 07 基因集打分 | `seurat_scored.rds` | `featureplot_<pathway>`（每条通路一张） |
 | 08 拟时序 | `trajectory_cds.rds`, `trajectory_resolved.yaml`（参数快照） | `trajectory_pseudotime`, `trajectory_celltype`, `trajectory_by_group` |
 | 09 细胞通讯 | `cellchat.rds`（单样本）/ `cellchat_list.rds`（多样本） | `compare_interaction_counts`, `diff_network_all`, `ranknet_pathway_comparison` |

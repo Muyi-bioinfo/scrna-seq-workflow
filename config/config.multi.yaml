@@ -120,7 +120,8 @@ pseudobulk:
   batch_col: batch              # 批次列（可选）：null 或列缺失/单一取值时自动退出 design
   celltype_col: celltype        # 细胞类型列（逐类型独立建模，不混类型）
   target_celltypes: []          # 白名单：只分析这些类型（留空 = 全部；与 exclude 叠加，先白后黑；
-                                # 非目标类型在 summary_degs.csv 记 skip_reason，不无声消失）
+                                # 非目标类型在 summary_degs.csv 记 skip_reason，不无声消失；
+                                # 演示/聚焦分析时临时填，如 [CD14 Mono]，1 分钟出结果）
   min_cells: 20                 # sample×celltype 至少 N 细胞才成 pseudobulk，低于则丢弃该格
   min_samples_per_group: 2      # 每组至少 N 个 pseudobulk 样本（配对 design 下还须残差 df≥1）
   padj_cutoff: 0.05
@@ -129,7 +130,8 @@ pseudobulk:
   reference_group: CTRL         # 对照组（condition 因子的参考水平）
   lfc_shrink: true              # apeglm 收缩 log2FC（仅展示列；不可用自动降级，不影响 padj/stat）
   run_gsea: false               # true：全基因 DEG 按 Wald stat 排序喂 GSEA（复用 diff_gsea 的 gmt）
-  exclude_celltypes: []         # 黑名单：从白名单结果里再剔除（名字须与注释完全一致）
+  exclude_celltypes: [Mk]       # 黑名单：低价值类型剔除（名字须与注释完全一致）；Eryth/pDC
+                                # 细胞数不足被 min_cells 自动跳过，无需列在这里
 
 # ---------- 高级模块（run_pipeline.sh --with-advanced 启用）----------
 advanced:

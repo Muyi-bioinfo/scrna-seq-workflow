@@ -8,7 +8,7 @@
 ###
 ### 输入：output/<batch>/03_annotate/seurat_annotated.rds（sample_id 由 01 写入）
 ### 输出：output/<batch>/06_pseudobulk_de/ —— by_celltype/<type>/（全基因结果/显著表）
-###      + figures/<type>/（volcano/MA/PCA）；顶层 summary_degs.csv 含单细胞口径对照
+###      + figures/<type>/（volcano/MA/PCA/heatmap）；顶层 summary_degs.csv 含单细胞口径对照
 ###############################################################################
 
 source("utils/utils.R")
@@ -187,7 +187,6 @@ write.table(pb_meta, file = file.path(step_dir, "pseudobulk_metadata.tsv"),
 # 语义同向：暖 = 刺激方向）。文字一律墨色，不借颜色传义
 PAL_UP <- "#e34948"; PAL_DOWN <- "#2a78d6"; PAL_NS <- "#c3c2b7"
 PAL_CTRL <- "#2a78d6"; PAL_STIM <- "#eb6834"
-PAL_AQUA <- "#1baf7a"   # 分类槽 3：单序列图（无方向语义，如供者响应 PCA）
 INK <- "#0b0b0b"; INK2 <- "#52514e"; MUTED <- "#898781"
 HAIR <- "#e1e0d9"; BASELINE <- "#c3c2b7"; SURFACE <- "#fcfcfb"
 
@@ -232,63 +231,17 @@ plot_pb_pca <- function(df, pve, title) {
   p
 }
 
-# ---- 5. 全局样本层 PCA（QC）：组分离与供者离群一眼可见 ----
-#' 取 top 高变 pseudobulk 做 PCA，返回得分与解释度
-pca_scores <- function(mat, ntop = 2000, log = TRUE) {
-  mat <- as.matrix(mat)
-  if (log) mat <- log2(mat + 1)   # 差异矩阵（log = FALSE）已是对数空间，不能再取 log
+#' 取 top 高变 pseudobulk 做 PCA，返回得分与解释度（fallback PCA 用）
+pca_scores <- function(mat, ntop = 2000) {
+  mat <- log2(as.matrix(mat) + 1)
   v <- apply(mat, 1, var)
   mat <- mat[order(v, decreasing = TRUE), , drop = FALSE]
   mat <- mat[seq_len(min(ntop, nrow(mat))), , drop = FALSE]
   pc <- prcomp(t(mat), center = TRUE, scale. = TRUE)
   list(df = as.data.frame(pc$x), pve = summary(pc)$importance[2, ])
 }
-# ---- 5. 供者级配对差异 PCA ----
-# 逐类型 PCA 回答"类型内条件分离"，本图回答"响应在供者间是否一致"：
-# 每个供者把所有类型合并成一个 bulk（STIM 侧 vs CTRL 侧），取 log2 差异向量做 PCA——
-# 一个点 = 一个供者的整体响应方向。8 个点同向 = 响应跨个体一致；离群点 = 生物异质性
-if (nrow(pb_meta) >= 6) {
-  # 每个 (供者, 条件) 的跨类型求和：小指示矩阵聚合 counts_pb 的列。
-  # ⚠️ 先与 pb_meta 对齐：pb_meta 已过滤（min_cells/未知组），counts_pb 仍是全列
-  counts_kept <- counts_pb[, pb_meta$pseudobulk_id, drop = FALSE]
-  key_dc <- paste(pb_meta$sample_id, pb_meta$condition, sep = "\01")
-  kd_fact <- factor(key_dc)
-  ind_dc <- Matrix::sparseMatrix(i = as.integer(kd_fact), j = seq_along(key_dc),
-                                 x = rep(1, length(key_dc)),
-                                 dims = c(nlevels(kd_fact), length(key_dc)),
-                                 dimnames = list(levels(kd_fact), pb_meta$pseudobulk_id))
-  donor_counts <- as.matrix(ind_dc %*% t(counts_kept))   # (供者×条件) × 基因
 
-  # 只保留双条件齐全的供者，算 STIM−CTRL 的 log2 差异向量
-  donors <- sort(unique(as.character(pb_meta$sample_id)))
-  have_both <- vapply(donors, function(d) {
-    all(c(paste(d, test_grp, sep = "\01"), paste(d, ref_grp, sep = "\01")) %in%
-          rownames(donor_counts))
-  }, logical(1))
-  donors <- donors[have_both]
-  diff_mat <- vapply(donors, function(d) {
-    log2(donor_counts[paste(d, test_grp, sep = "\01"), ] + 1) -
-      log2(donor_counts[paste(d, ref_grp, sep = "\01"), ] + 1)
-  }, numeric(ncol(donor_counts)))   # 基因 × 供者
-  colnames(diff_mat) <- donors
-
-  pcs <- pca_scores(diff_mat, log = FALSE)   # 差异已在对数空间
-  pcs$df$sample_id <- rownames(pcs$df)
-  p <- ggplot(pcs$df, aes(x = PC1, y = PC2)) +
-    geom_point(size = 3.5, color = PAL_AQUA, alpha = 0.9) +
-    labs(title = "Donor-level response — per-donor STIM vs CTRL log2 fold-change",
-         x = sprintf("PC1 · %.1f%% variance", 100 * pcs$pve[1]),
-         y = sprintf("PC2 · %.1f%% variance", 100 * pcs$pve[2])) +
-    theme_pb()
-  if (requireNamespace("ggrepel", quietly = TRUE)) {
-    p <- p + ggrepel::geom_text_repel(aes(label = sample_id), size = 3, color = INK,
-                                      max.overlaps = 20, segment.color = MUTED,
-                                      segment.size = 0.3, box.padding = 0.3)
-  }
-  save_fig(p, "donor_response_pca")
-}
-
-# ---- 6. GSEA 预备（可选；默认关）----
+# ---- 5. GSEA 预备（可选；默认关）----
 if (run_gsea) {
   if (is.null(cfg$diff_gsea)) {
     warning("run_gsea=true 但 config 缺少 diff_gsea 段（gmt 路径），跳过 pseudobulk GSEA")
@@ -302,7 +255,7 @@ if (run_gsea) {
   }
 }
 
-# ---- 7. 逐细胞类型 DESeq2 ----
+# ---- 6. 逐细胞类型 DESeq2 ----
 # 逐类型列表 = 注释全集（含最终被跳过的类型：summary 里给 skip_reason，不留黑洞）
 cts_all <- sort(unique(as.character(scobj[[]][[celltype_col]])))
 
@@ -499,14 +452,15 @@ for (ct in cts_all) {
     theme_pb()
   save_fig(p, "MAplot", width = 7, height = 6)
 
-  # 样本层 PCA：优先 vst + plotPCA(returnData)（官方变换），失败退回 log2 计数 PCA
-  pc_src <- tryCatch({
-    vsd <- DESeq2::vst(dds, blind = FALSE)
-    DESeq2::plotPCA(vsd, intgroup = "condition", returnData = TRUE)
-  }, error = function(e) {
-    message("-- vst/plotPCA 失败，退回 log2 计数 PCA: ", conditionMessage(e))
+  # vst 变换（PCA 与热图共用）：失败时 PCA 退回 log2 计数、热图跳过
+  vsd <- tryCatch(DESeq2::vst(dds, blind = FALSE), error = function(e) {
+    message("-- vst 失败，PCA 退回 log2 计数、热图跳过: ", conditionMessage(e))
     NULL
   })
+  pc_src <- if (!is.null(vsd)) {
+    tryCatch(DESeq2::plotPCA(vsd, intgroup = "condition", returnData = TRUE),
+             error = function(e) NULL)
+  } else NULL
   if (!is.null(pc_src)) {
     pc_src$sample_id <- as.character(sub_meta$sample_id)   # plotPCA 行序与 colData 一致
     save_fig(plot_pb_pca(pc_src, attr(pc_src, "percentVar"), ct), "PCA")
@@ -515,6 +469,27 @@ for (ct in cts_all) {
     pcs$df$condition <- sub_meta$condition
     pcs$df$sample_id <- as.character(sub_meta$sample_id)
     save_fig(plot_pb_pca(pcs$df, pcs$pve, ct), "PCA")
+  }
+
+  # 热图（期刊标准 pseudobulk 图）：top N 显著 DEG × 本类型样本（vst 值），
+  # 列注释 = 条件颜色条；期望样本按条件聚成两簇
+  top_deg <- head(sig_df$gene, 50)
+  if (!is.null(vsd) && length(top_deg) >= 2 && requireNamespace("pheatmap", quietly = TRUE)) {
+    hm <- SummarizedExperiment::assay(vsd)[top_deg, , drop = FALSE]
+    hm <- t(scale(t(hm)))   # 行 z-score：基因间可比
+    colnames(hm) <- paste0(as.character(sub_meta$sample_id), "_", sub_meta$condition)
+    ann <- data.frame(condition = sub_meta$condition, row.names = colnames(hm))
+    save_fig_draw(
+      pheatmap::pheatmap(
+        hm, annotation_col = ann,
+        annotation_colors = list(condition = setNames(c(PAL_CTRL, PAL_STIM),
+                                                      c(ref_grp, test_grp))),
+        main = paste0(ct, " — top ", nrow(hm), " DEGs"),
+        color = colorRampPalette(c(PAL_DOWN, "#f5f5f2", PAL_UP))(100),   # 发散对：蓝→白→红
+        fontsize = 8, fontsize_row = 6, border_color = NA),
+      "heatmap", width = 8, height = 7)
+  } else if (length(top_deg) < 2) {
+    message("-- ", ct, " 显著 DEG 不足 2 个，跳过热图")
   }
 
   # 可选 GSEA：全基因按 Wald stat 排序（stat = logFC/SE，低计数噪声基因天然被压后）
@@ -579,7 +554,7 @@ for (ct in cts_all) {
 }
 options(fig_outdir = file.path(step_dir, "figures"))   # 恢复到本步的 figures/
 
-# ---- 8. 汇总 + 05/06 对比 ----
+# ---- 7. 汇总 + 05/06 对比 ----
 if (length(summary_rows) == 0) {
   stop("没有任何细胞类型通过 min_samples_per_group 守卫，请检查 config 或数据")
 }

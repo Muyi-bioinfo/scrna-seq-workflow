@@ -168,7 +168,7 @@ Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/`
 | 03 annotate (+ subcluster) | `seurat_annotated.rds`, `all_markers_table.rds`, `top10_markers.csv`, `annotation_evidence.csv` | `dimplot_annotated`, `dotplot_markers_by_cluster`, `featureplot_celltypes/` |
 | 04 multi-group plot | figures only | `barplot_cell_proportion`, `dotplot_grouped`, `heatmap_top5_markers` |
 | 05 DE + GSEA | `split_markers.rds`, `diff_stim_vs_ctrl.rds` | `compareCluster_dotplot`, `gsea_kegg_dotplot`, `gsea_hallmark_dotplot` |
-| 06 pseudobulk DE | `summary_degs.csv`, `by_celltype/<type>/` (`deseq2_results.tsv` + `significant_degs.tsv`) | `figures/<type>/` (`volcano`, `MAplot`, `PCA`), `summary_05_vs_06`, `donor_response_pca` |
+| 06 pseudobulk DE | `summary_degs.csv`, `by_celltype/<type>/` (`deseq2_results.tsv` + `significant_degs.tsv`) | `figures/<type>/` (`volcano`, `MAplot`, `PCA`, `heatmap`), `summary_05_vs_06` |
 | 07 gene-set scoring | `seurat_scored.rds` | `featureplot_<pathway>` (one per signature) |
 | 08 trajectory | `trajectory_cds.rds`, `trajectory_resolved.yaml` (parameter snapshot) | `trajectory_pseudotime`, `trajectory_celltype`, `trajectory_by_group` |
 | 09 cell communication | `cellchat.rds` (single) / `cellchat_list.rds` (multi) | `compare_interaction_counts`, `diff_network_all`, `ranknet_pathway_comparison` |

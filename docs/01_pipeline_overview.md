@@ -64,7 +64,7 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 | 6+7 注释+亚群 | `03_annotate.R` | `annotate:`、`subcluster:` | clustered → `seurat_annotated.rds`（+ 亚群 rds） | featureplot_markers、dimplot_annotated、（亚群图） |
 | 8 多组可视化 | `04_multi_group_plot.R` | `multi_group:` | annotated → 仅图 | 比例图、分组 DotPlot、热图 |
 | 9 差异+GSEA | `05_diff_gsea.R` | `diff_gsea:` | annotated → 差异 rds + 图 | compareCluster、GSEA dotplot |
-| 9+ pseudobulk 确认性 DE（样本级） | `06_pseudobulk_de.R` | `pseudobulk:`（配对 design / min 守卫 / target 白名单；sample_id 由 01 写入） | annotated → `by_celltype/<type>/` 逐类型 DESeq2 结果 + `summary_degs.csv` | `figures/<type>/` volcano/MA/PCA、供者级响应 PCA、05 vs 06 对比条形图 |
+| 9+ pseudobulk 确认性 DE（样本级） | `06_pseudobulk_de.R` | `pseudobulk:`（配对 design / min 守卫 / target 白名单；sample_id 由 01 写入） | annotated → `by_celltype/<type>/` 逐类型 DESeq2 结果 + `summary_degs.csv` | `figures/<type>/` volcano/MA/PCA/heatmap、05 vs 06 对比条形图 |
 | A 基因集打分（高级） | `07_gene_set_score.R` | `advanced:` | annotated → `seurat_scored.rds` | 通路打分 FeaturePlot |
 | B 拟时序（高级） | `08_trajectory_analysis.R` | `advanced$trajectory`（preset / reduction / root_celltype） | annotated → `trajectory_cds.rds` + `trajectory_resolved.yaml` 参数快照 | 伪时间轨迹图、细胞类型轨迹图、分组轨迹图 |
 | C 细胞通讯（高级） | `09_cell_communication.R` | `advanced$cellchat` | annotated → 通讯网络结果 | 通讯网络图、通路气泡图、组间差异比较 |

@@ -2,7 +2,9 @@
 
 English | [简体中文](README_CN.md)
 
-> A complete single-cell RNA-seq analysis pipeline — from FASTQ quantification to downstream analysis.
+> **Production-ready scRNA-seq analysis pipeline with sample-aware statistics (pseudobulk DE), reproducible orchestration, and defensive engineering practices.**
+
+A complete single-cell RNA-seq analysis pipeline — from FASTQ quantification to downstream analysis.
 > Built as a self-learning project from a public tutorial + 10x Genomics official documentation (no real project data involved), adapted to Seurat v5.
 > The architecture follows mainstream scRNA-seq projects on GitHub: one script per analysis stage + centralized config + a sequential runner (cf. [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow)). A comparison with workflow engines such as Snakemake/Nextflow can be found in docs/01.
 
@@ -97,6 +99,12 @@ Top 50 significant DEG heatmap (vst-normalized values), samples cluster by condi
 ![Pseudotime](docs/assets/showcase/trajectory_pseudotime.png)
 
 Pseudotime on the T-lineage subset (12,828 cells, root = CD4 Naive T, lineage preset from `config/trajectory_presets/`); 0 Inf values — subsetting to a connected lineage avoids the disconnected-graph Inf problem.
+
+## Technical Highlights
+
+- **Sample-aware statistics**: Pseudobulk + DESeq2 with paired design, resolves pseudoreplication (step 06)
+- **Defensive design**: Machine-validated cluster mapping, fixed seeds, resume-safe orchestration
+- **Engineering practices**: Centralized config, per-step logging, parameter snapshots, 188-line pitfall table
 
 ## Quick start
 

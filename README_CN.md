@@ -2,7 +2,9 @@
 
 [English](README.md) | 简体中文
 
-> 从上游定量到下游分析的 scRNA-seq 完整分析流程。
+> **生产级 scRNA-seq 分析流程：样本级统计（pseudobulk DE）+ 可复现编排 + 防御式工程实践。**
+
+从上游定量到下游分析的 scRNA-seq 完整分析流程。
 > 在没有真实项目数据的情况下，基于公开教程 + 10x 官方文档自学搭建，Seurat v5 适配。
 > 架构参考 GitHub 主流 scRNA-seq 项目（每步一脚本 + 集中配置 + 顺序 runner，如 [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow)；工业级工作流引擎 Snakemake/Nextflow 的对比见 docs/01）。
 
@@ -97,6 +99,12 @@ Top 50 显著 DEG 热图（vst 标准化值），样本按条件聚类成两簇�
 ![Pseudotime](docs/assets/showcase/trajectory_pseudotime.png)
 
 T 谱系子集上的伪时间（12,828 细胞，根 = CD4 Naive T，谱系预设来自 `config/trajectory_presets/`）；Inf 伪时间 = 0——只对连通谱系跑轨迹，避开图不连通的 Inf 问题。
+
+## 技术亮点
+
+- **样本级统计**：Pseudobulk + DESeq2 配对设计，解决伪重复问题（步骤 06）
+- **防御式设计**：机器校验的分群映射、固定种子、断点续跑编排
+- **工程实践**：集中配置、分步日志、参数快照、188 行踩坑表
 
 ## 快速开始
 

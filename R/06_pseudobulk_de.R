@@ -241,6 +241,156 @@ pca_scores <- function(mat, ntop = 2000) {
   list(df = as.data.frame(pc$x), pve = summary(pc)$importance[2, ])
 }
 
+#' 火山图（期刊风）：发散对配色（暖红上调/冷蓝下调）+ 中性灰不显著点；
+#' NS 先画沉底、显著点后画压上；top10 标签墨色；副标题带 Up/Down 计数。
+#' 返回 vd（供汇总统计 Up/Down 数）
+plot_volcano <- function(res_df, lfc_col, ct) {
+  vd <- res_df[!is.na(res_df$padj) & is.finite(res_df[[lfc_col]]), , drop = FALSE]
+  vd$cat <- factor(ifelse(vd$padj < padj_cut & vd[[lfc_col]] >= lfc_cut, "Up",
+                   ifelse(vd$padj < padj_cut & vd[[lfc_col]] <= -lfc_cut, "Down", "NS")),
+                   levels = c("Down", "NS", "Up"))
+  vd$mlog10p <- pmin(-log10(vd$padj), 350)   # -log10(padj) 截断（极显著基因拉爆坐标轴）
+  sig_idx <- which(vd$cat != "NS")
+  lab <- head(vd[sig_idx[order(vd$padj[sig_idx])], , drop = FALSE], 10)   # top10 显著基因标签
+  p <- ggplot(vd, aes(x = .data[[lfc_col]], y = mlog10p, color = cat)) +
+    geom_point(data = vd[vd$cat == "NS", , drop = FALSE], size = 0.5, alpha = 0.25) +
+    geom_point(data = vd[vd$cat != "NS", , drop = FALSE], size = 0.9, alpha = 0.75) +
+    geom_vline(xintercept = c(-lfc_cut, lfc_cut), linetype = "dashed",
+               color = BASELINE, linewidth = 0.5) +
+    geom_hline(yintercept = -log10(padj_cut), linetype = "dashed",
+               color = BASELINE, linewidth = 0.5) +
+    scale_color_manual(values = c(Up = PAL_UP, Down = PAL_DOWN, NS = PAL_NS), drop = FALSE) +
+    labs(title = ct,
+         subtitle = sprintf("Up %d · Down %d", sum(vd$cat == "Up"), sum(vd$cat == "Down")),
+         x = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
+         y = expression(-log[10]~adjusted~italic(P)), color = NULL) +
+    theme_pb()
+  if (nrow(lab) > 0 && requireNamespace("ggrepel", quietly = TRUE)) {
+    p <- p + ggrepel::geom_text_repel(data = lab, aes(label = gene), size = 2.8,
+                                      color = INK, max.overlaps = 20,
+                                      segment.color = MUTED, segment.size = 0.3,
+                                      box.padding = 0.3, show.legend = FALSE)
+  }
+  save_fig(p, "volcano", type = "volcano")
+  invisible(vd)
+}
+
+#' MA 图（期刊风 ggplot 版）：x = log10(baseMean) 看计数深度，y = 收缩 log2FC
+plot_ma <- function(res_df, lfc_col, ct) {
+  ma_df <- res_df[is.finite(res_df$baseMean) & is.finite(res_df[[lfc_col]]), , drop = FALSE]
+  ma_df$log10mean <- log10(ma_df$baseMean + 1)
+  ma_df$cat <- factor(ifelse(ma_df$sig & ma_df[[lfc_col]] > 0, "Up",
+                      ifelse(ma_df$sig & ma_df[[lfc_col]] < 0, "Down", "NS")),
+                      levels = c("Down", "NS", "Up"))
+  p <- ggplot(ma_df, aes(x = log10mean, y = .data[[lfc_col]], color = cat)) +
+    geom_point(size = 0.8, alpha = 0.55) +
+    geom_hline(yintercept = 0, color = BASELINE, linewidth = 0.5) +
+    geom_hline(yintercept = c(-lfc_cut, lfc_cut), linetype = "dashed",
+               color = BASELINE, linewidth = 0.5) +
+    scale_color_manual(values = c(Up = PAL_UP, Down = PAL_DOWN, NS = PAL_NS), drop = FALSE) +
+    labs(title = ct, x = expression(log[10]~mean~normalized~counts),
+         y = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
+         color = NULL) +
+    theme_pb()
+  save_fig(p, "MAplot", width = 7, height = 6)
+}
+
+#' 样本层 PCA：vst + plotPCA(returnData) 优先，失败退回 log2 计数 PCA
+plot_pca_type <- function(vsd, cnt, sub_meta, ct) {
+  pc_src <- if (!is.null(vsd)) {
+    tryCatch(DESeq2::plotPCA(vsd, intgroup = "condition", returnData = TRUE),
+             error = function(e) NULL)
+  } else NULL
+  if (!is.null(pc_src)) {
+    pc_src$sample_id <- as.character(sub_meta$sample_id)   # plotPCA 行序与 colData 一致
+    save_fig(plot_pb_pca(pc_src, attr(pc_src, "percentVar"), ct), "PCA")
+  } else {
+    pcs <- pca_scores(cnt)   # cnt 已是 基因×样本，pca_scores 正期待这个方向
+    pcs$df$condition <- sub_meta$condition
+    pcs$df$sample_id <- as.character(sub_meta$sample_id)
+    save_fig(plot_pb_pca(pcs$df, pcs$pve, ct), "PCA")
+  }
+}
+
+#' 热图（期刊标准 pseudobulk 图）：top N 显著 DEG × 本类型样本（vst 值），
+#' 列注释 = 条件颜色条；期望样本按条件聚成两簇
+plot_heatmap_type <- function(sig_df, vsd, sub_meta, ct) {
+  top_deg <- head(sig_df$gene, 50)
+  if (!is.null(vsd) && length(top_deg) >= 2 && requireNamespace("pheatmap", quietly = TRUE)) {
+    hm <- SummarizedExperiment::assay(vsd)[top_deg, , drop = FALSE]
+    hm <- t(scale(t(hm)))   # 行 z-score：基因间可比
+    colnames(hm) <- paste0(as.character(sub_meta$sample_id), "_", sub_meta$condition)
+    ann <- data.frame(condition = sub_meta$condition, row.names = colnames(hm))
+    save_fig_draw(
+      pheatmap::pheatmap(
+        hm, annotation_col = ann,
+        annotation_colors = list(condition = setNames(c(PAL_CTRL, PAL_STIM),
+                                                      c(ref_grp, test_grp))),
+        main = paste0(ct, " — top ", nrow(hm), " DEGs"),
+        color = colorRampPalette(c(PAL_DOWN, "#f5f5f2", PAL_UP))(100),   # 发散对：蓝→白→红
+        fontsize = 8, fontsize_row = 6, fontsize_col = 6,
+        angle_col = 90,   # 列标签从下往上读（默认 270 从上往下读，别扭；16 列时 45° 会挤）
+        border_color = NA),
+      "heatmap", width = 8, height = 7)
+  } else if (length(top_deg) < 2) {
+    message("-- ", ct, " 显著 DEG 不足 2 个，跳过热图")
+  }
+}
+
+#' 可选 GSEA：全基因按 Wald stat 排序（stat = logFC/SE，低计数噪声基因天然被压后）
+run_gsea_type <- function(res_df, ct_dir) {
+  geneList <- res_df$stat
+  names(geneList) <- res_df$gene
+  geneList <- sort(geneList[!is.na(geneList)], decreasing = TRUE)
+  gmt_files <- list(kegg = cfg$diff_gsea$gmt_kegg, hallmark = cfg$diff_gsea$gmt_hallmark)
+  for (nm in names(gmt_files)) {
+    gmt <- gmt_files[[nm]]
+    if (is.null(gmt) || !file.exists(gmt)) {
+      warning("基因集文件不存在，跳过 ", nm, ": ", gmt)
+      next
+    }
+    set.seed(123)   # ⚠️ GSEA 靠随机置换算 p 值，与 05 同款固定种子
+    y <- GSEA(geneList, TERM2GENE = read.gmt(gmt))
+    y_df <- as.data.frame(y)
+    if (nrow(y_df) == 0) {   # 零结果保护：gmt 与数据基因名不匹配时防晦涩报错（同 05）
+      warning(nm, " 基因集 GSEA 无任何富集结果（检查 gmt 物种与格式）: ", gmt)
+      next
+    }
+    write.table(y_df, file = file.path(ct_dir, paste0("gsea_", nm, ".tsv")),
+                sep = "\t", quote = FALSE, row.names = FALSE)
+    # ⚠️ 正负两方向都存在时才按 .sign 拆 facet（单向结果 facet 会中断脚本，同 05）
+    if (length(unique(y_df$.sign)) >= 2) {
+      save_fig(dotplot(y, showCategory = 12, split = ".sign") + facet_grid(~.sign),
+               paste0("gsea_", nm, "_dotplot"), type = "gsea")
+    } else {
+      save_fig(dotplot(y, showCategory = 12),
+               paste0("gsea_", nm, "_dotplot"), type = "gsea")
+    }
+  }
+}
+
+#' 同对比口径的单细胞对照（伪重复基准）：FindMarkers 以细胞为统计单元，p 值虚小。
+#' 与 DESeq2 取相同基因全集 + 相同 BH 校正后比较显著数（STIM 上调），
+#' 返回 c(n_pb_up_bh, n_sc_up_bh)——细胞级口径应 ≥ 样本级口径
+cell_level_comparison <- function(res_df, lfc_col, ct) {
+  fm <- tryCatch(
+    FindMarkers(scobj, ident.1 = paste0(ct, "^^", test_grp),
+                ident.2 = paste0(ct, "^^", ref_grp),
+                logfc.threshold = 0, min.pct = 0, verbose = FALSE),
+    error = function(e) NULL)
+  if (is.null(fm)) {
+    warning("类型 ", ct, " 的单细胞 FindMarkers 对照失败（对照列留空）")
+    return(list(n_pb_up_bh = NA_integer_, n_sc_up_bh = NA_integer_))
+  }
+  common <- intersect(res_df$gene, rownames(fm))
+  r_cmp <- res_df[match(common, res_df$gene), ]
+  f_cmp <- fm[match(common, rownames(fm)), ]
+  r_cmp$padj_bh <- p.adjust(r_cmp$pvalue, "BH")
+  f_cmp$padj_bh <- p.adjust(f_cmp$p_val, "BH")
+  list(n_pb_up_bh = sum(!is.na(r_cmp$padj_bh) & r_cmp$padj_bh < padj_cut & r_cmp[[lfc_col]] > 0),
+       n_sc_up_bh = sum(!is.na(f_cmp$padj_bh) & f_cmp$padj_bh < padj_cut & f_cmp$avg_log2FC > 0))
+}
+
 # ---- 5. GSEA 预备（可选；默认关）----
 if (run_gsea) {
   if (is.null(cfg$diff_gsea)) {
@@ -403,149 +553,19 @@ for (ct in cts_all) {
   saveRDS(list(counts = cnt, colData = sub_meta, design = row$design),
           file = file.path(ct_dir, "pseudobulk_counts.rds"))
 
-  # 火山图（期刊风）：发散对（暖红上调/冷蓝下调）+ 中性灰不显著点；标签墨色
-  vd <- res_df[!is.na(res_df$padj) & is.finite(res_df[[lfc_col]]), , drop = FALSE]
-  vd$cat <- factor(ifelse(vd$padj < padj_cut & vd[[lfc_col]] >= lfc_cut, "Up",
-                   ifelse(vd$padj < padj_cut & vd[[lfc_col]] <= -lfc_cut, "Down", "NS")),
-                   levels = c("Down", "NS", "Up"))
-  vd$mlog10p <- pmin(-log10(vd$padj), 350)   # -log10(padj) 截断（极显著基因拉爆坐标轴）
-  sig_idx <- which(vd$cat != "NS")
-  lab <- head(vd[sig_idx[order(vd$padj[sig_idx])], , drop = FALSE], 10)   # top10 显著基因标签
-  # 分层绘制：NS 先画（更小更淡，退到背景），显著点后画（更实，压在最上）——防灰点淹没显著点
-  p <- ggplot(vd, aes(x = .data[[lfc_col]], y = mlog10p, color = cat)) +
-    geom_point(data = vd[vd$cat == "NS", , drop = FALSE], size = 0.5, alpha = 0.25) +
-    geom_point(data = vd[vd$cat != "NS", , drop = FALSE], size = 0.9, alpha = 0.75) +
-    geom_vline(xintercept = c(-lfc_cut, lfc_cut), linetype = "dashed",
-               color = BASELINE, linewidth = 0.5) +
-    geom_hline(yintercept = -log10(padj_cut), linetype = "dashed",
-               color = BASELINE, linewidth = 0.5) +
-    scale_color_manual(values = c(Up = PAL_UP, Down = PAL_DOWN, NS = PAL_NS), drop = FALSE) +
-    labs(title = ct,
-         subtitle = sprintf("Up %d · Down %d", sum(vd$cat == "Up"), sum(vd$cat == "Down")),
-         x = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
-         y = expression(-log[10]~adjusted~italic(P)), color = NULL) +
-    theme_pb()
-  if (nrow(lab) > 0 && requireNamespace("ggrepel", quietly = TRUE)) {
-    p <- p + ggrepel::geom_text_repel(data = lab, aes(label = gene), size = 2.8,
-                                      color = INK, max.overlaps = 20,
-                                      segment.color = MUTED, segment.size = 0.3,
-                                      box.padding = 0.3, show.legend = FALSE)
-  }
-  save_fig(p, "volcano", type = "volcano")
-
-  # MA 图（期刊风 ggplot 版）：x = log10(baseMean) 看计数深度，y = 收缩 log2FC；
-  # 不显著点退灰，阈值线为虚线基线色
-  ma_df <- res_df[is.finite(res_df$baseMean) & is.finite(res_df[[lfc_col]]), , drop = FALSE]
-  ma_df$log10mean <- log10(ma_df$baseMean + 1)
-  ma_df$cat <- factor(ifelse(ma_df$sig & ma_df[[lfc_col]] > 0, "Up",
-                      ifelse(ma_df$sig & ma_df[[lfc_col]] < 0, "Down", "NS")),
-                      levels = c("Down", "NS", "Up"))
-  p <- ggplot(ma_df, aes(x = log10mean, y = .data[[lfc_col]], color = cat)) +
-    geom_point(size = 0.8, alpha = 0.55) +
-    geom_hline(yintercept = 0, color = BASELINE, linewidth = 0.5) +
-    geom_hline(yintercept = c(-lfc_cut, lfc_cut), linetype = "dashed",
-               color = BASELINE, linewidth = 0.5) +
-    scale_color_manual(values = c(Up = PAL_UP, Down = PAL_DOWN, NS = PAL_NS), drop = FALSE) +
-    labs(title = ct, x = expression(log[10]~mean~normalized~counts),
-         y = paste0("log2 fold change", if (lfc_col != "log2FoldChange") " (shrunk)" else ""),
-         color = NULL) +
-    theme_pb()
-  save_fig(p, "MAplot", width = 7, height = 6)
-
+  vd <- plot_volcano(res_df, lfc_col, ct)   # 火山图（返回 vd 供汇总统计）
+  plot_ma(res_df, lfc_col, ct)
   # vst 变换（PCA 与热图共用）：失败时 PCA 退回 log2 计数、热图跳过
   vsd <- tryCatch(DESeq2::vst(dds, blind = FALSE), error = function(e) {
     message("-- vst 失败，PCA 退回 log2 计数、热图跳过: ", conditionMessage(e))
     NULL
   })
-  pc_src <- if (!is.null(vsd)) {
-    tryCatch(DESeq2::plotPCA(vsd, intgroup = "condition", returnData = TRUE),
-             error = function(e) NULL)
-  } else NULL
-  if (!is.null(pc_src)) {
-    pc_src$sample_id <- as.character(sub_meta$sample_id)   # plotPCA 行序与 colData 一致
-    save_fig(plot_pb_pca(pc_src, attr(pc_src, "percentVar"), ct), "PCA")
-  } else {
-    pcs <- pca_scores(cnt)   # cnt 已是 基因×样本，pca_scores 正期待这个方向
-    pcs$df$condition <- sub_meta$condition
-    pcs$df$sample_id <- as.character(sub_meta$sample_id)
-    save_fig(plot_pb_pca(pcs$df, pcs$pve, ct), "PCA")
-  }
-
-  # 热图（期刊标准 pseudobulk 图）：top N 显著 DEG × 本类型样本（vst 值），
-  # 列注释 = 条件颜色条；期望样本按条件聚成两簇
-  top_deg <- head(sig_df$gene, 50)
-  if (!is.null(vsd) && length(top_deg) >= 2 && requireNamespace("pheatmap", quietly = TRUE)) {
-    hm <- SummarizedExperiment::assay(vsd)[top_deg, , drop = FALSE]
-    hm <- t(scale(t(hm)))   # 行 z-score：基因间可比
-    colnames(hm) <- paste0(as.character(sub_meta$sample_id), "_", sub_meta$condition)
-    ann <- data.frame(condition = sub_meta$condition, row.names = colnames(hm))
-    save_fig_draw(
-      pheatmap::pheatmap(
-        hm, annotation_col = ann,
-        annotation_colors = list(condition = setNames(c(PAL_CTRL, PAL_STIM),
-                                                      c(ref_grp, test_grp))),
-        main = paste0(ct, " — top ", nrow(hm), " DEGs"),
-        color = colorRampPalette(c(PAL_DOWN, "#f5f5f2", PAL_UP))(100),   # 发散对：蓝→白→红
-        fontsize = 8, fontsize_row = 6, fontsize_col = 6,
-        angle_col = 90,   # 列标签从下往上读（默认 270 从上往下读，别扭；16 列时 45° 会挤）
-        border_color = NA),
-      "heatmap", width = 8, height = 7)
-  } else if (length(top_deg) < 2) {
-    message("-- ", ct, " 显著 DEG 不足 2 个，跳过热图")
-  }
-
-  # 可选 GSEA：全基因按 Wald stat 排序（stat = logFC/SE，低计数噪声基因天然被压后）
-  if (run_gsea) {
-    geneList <- res_df$stat
-    names(geneList) <- res_df$gene
-    geneList <- sort(geneList[!is.na(geneList)], decreasing = TRUE)
-    gmt_files <- list(kegg = cfg$diff_gsea$gmt_kegg, hallmark = cfg$diff_gsea$gmt_hallmark)
-    for (nm in names(gmt_files)) {
-      gmt <- gmt_files[[nm]]
-      if (is.null(gmt) || !file.exists(gmt)) {
-        warning("基因集文件不存在，跳过 ", nm, ": ", gmt)
-        next
-      }
-      set.seed(123)   # ⚠️ GSEA 靠随机置换算 p 值，与 05 同款固定种子
-      y <- GSEA(geneList, TERM2GENE = read.gmt(gmt))
-      y_df <- as.data.frame(y)
-      if (nrow(y_df) == 0) {   # 零结果保护：gmt 与数据基因名不匹配时防晦涩报错（同 05）
-        warning(nm, " 基因集 GSEA 无任何富集结果（检查 gmt 物种与格式）: ", gmt)
-        next
-      }
-      write.table(y_df, file = file.path(ct_dir, paste0("gsea_", nm, ".tsv")),
-                  sep = "\t", quote = FALSE, row.names = FALSE)
-      # ⚠️ 正负两方向都存在时才按 .sign 拆 facet（单向结果 facet 会中断脚本，同 05）
-      if (length(unique(y_df$.sign)) >= 2) {
-        save_fig(dotplot(y, showCategory = 12, split = ".sign") + facet_grid(~.sign),
-                 paste0("gsea_", nm, "_dotplot"), type = "gsea")
-      } else {
-        save_fig(dotplot(y, showCategory = 12),
-                 paste0("gsea_", nm, "_dotplot"), type = "gsea")
-      }
-    }
-  }
-
-  # ---- 同对比口径的单细胞对照（伪重复基准）----
-  # FindMarkers 以细胞为统计单元：同一供者的细胞被当独立观测，p 值虚小。
-  # 与 DESeq2 取相同基因全集 + 相同 BH 校正后比较显著数（STIM 上调），
-  # 供 summary_degs.csv 与 summary_05_vs_06 图对照——细胞级口径应 ≥ 样本级口径
-  fm <- tryCatch(
-    FindMarkers(scobj, ident.1 = paste0(ct, "^^", test_grp),
-                ident.2 = paste0(ct, "^^", ref_grp),
-                logfc.threshold = 0, min.pct = 0, verbose = FALSE),
-    error = function(e) NULL)
-  if (!is.null(fm)) {
-    common <- intersect(res_df$gene, rownames(fm))
-    r_cmp <- res_df[match(common, res_df$gene), ]
-    f_cmp <- fm[match(common, rownames(fm)), ]
-    r_cmp$padj_bh <- p.adjust(r_cmp$pvalue, "BH")
-    f_cmp$padj_bh <- p.adjust(f_cmp$p_val, "BH")
-    row$n_pb_up_bh <- sum(!is.na(r_cmp$padj_bh) & r_cmp$padj_bh < padj_cut & r_cmp[[lfc_col]] > 0)
-    row$n_sc_up_bh <- sum(!is.na(f_cmp$padj_bh) & f_cmp$padj_bh < padj_cut & f_cmp$avg_log2FC > 0)
-  } else {
-    warning("类型 ", ct, " 的单细胞 FindMarkers 对照失败（对照列留空）")
-  }
+  plot_pca_type(vsd, cnt, sub_meta, ct)
+  plot_heatmap_type(sig_df, vsd, sub_meta, ct)
+  if (run_gsea) run_gsea_type(res_df, ct_dir)
+  cmp <- cell_level_comparison(res_df, lfc_col, ct)
+  row$n_pb_up_bh <- cmp$n_pb_up_bh
+  row$n_sc_up_bh <- cmp$n_sc_up_bh
 
   row$n_tested_genes <- nrow(res_df)
   row$n_sig_padj_lfc <- nrow(sig_df)

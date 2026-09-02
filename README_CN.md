@@ -64,7 +64,7 @@ scrna-seq-workflow/
 
 ## 结果展示
 
-run03 验证批次的真实输出（GSE96583，质控后 24,644 细胞）。
+run04 验证批次的真实输出（GSE96583，质控后 24,644 细胞）。
 
 **多样本整合 —— harmony 前后对比**
 
@@ -85,6 +85,12 @@ run03 验证批次的真实输出（GSE96583，质控后 24,644 细胞）。
 ![GSEA](docs/assets/showcase/gsea_hallmark_cd14mono.png)
 
 Hallmark GSEA 中干扰素-α 响应位居激活通路第一（GeneRatio ≈ 0.8），干扰素-γ 响应也显著富集——与 GSE96583 的 IFN-β 刺激设计一致。
+
+**Pseudobulk DE —— 样本级确认（CD14 单核细胞，DESeq2）**
+
+![Pseudobulk heatmap](docs/assets/showcase/pseudobulk_heatmap_cd14mono.png)
+
+Top 50 显著 DEG 热图（vst 标准化值），样本按条件聚类成两簇——06 把同类细胞按供者聚合成 pseudobulk，DESeq2 把供者作统计单元，解决 05 的伪重复问题。
 
 **拟时序 —— T 细胞谱系（monocle3）**
 
@@ -154,7 +160,7 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 
 ## 输出产物
 
-每次运行归档在 `output/<batch>/<step>/` —— 结果 `.rds` + `figures/` + `.done` 断点标记；每个批次还保留各步 `logs/` 与 `config_used.yaml` 参数快照。各步骤产出如下（run03 验证批次的真实文件清单）：
+每次运行归档在 `output/<batch>/<step>/` —— 结果 `.rds` + `figures/` + `.done` 断点标记；每个批次还保留各步 `logs/` 与 `config_used.yaml` 参数快照。各步骤产出如下（run04 验证批次的真实文件清单）：
 
 | 步骤 | 关键结果 | 代表性图片 |
 |---|---|---|
@@ -197,7 +203,7 @@ Rscript R/02_preprocess_cluster.R   # 单阶段直接运行（HPC 节点上单�
 
 - 完整依赖清单见 [environment.yaml](environment.yaml)，一条命令重建环境：
   `mamba env create -f environment.yaml`
-- 核心版本：R 4.5.3、Seurat 5.5.1、SeuratObject 5.4.0、monocle3 1.4.27、harmony、scDblFinder、yaml
+- 核心版本：R 4.5.3、Seurat 5.5.1、SeuratObject 5.4.0、monocle3 1.4.27、harmony、scDblFinder、DESeq2、apeglm、yaml
 - ⚠️ 4 个包需从 GitHub 安装（conda 渠道无，见 yaml 头部注释）：SeuratWrappers、CellChat（必需）+ presto、scCustomize（可选）
 - cellranger 9.0.1（独立软件，非 R 包，见 docs/02_cellranger_guide.md）
 

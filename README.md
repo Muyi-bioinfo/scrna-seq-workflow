@@ -64,7 +64,7 @@ scrna-seq-workflow/
 
 ## Results showcase
 
-Real outputs of the run03 validation batch (GSE96583, 24,644 cells after QC).
+Real outputs of the run04 validation batch (GSE96583, 24,644 cells after QC).
 
 **Multi-sample integration — before vs after harmony**
 
@@ -85,6 +85,12 @@ The cluster→cell-type mapping is machine-checked against marker evidence (`che
 ![GSEA](docs/assets/showcase/gsea_hallmark_cd14mono.png)
 
 Hallmark GSEA ranks interferon-α response as the top activated pathway (GeneRatio ≈ 0.8), with interferon-γ response also strongly enriched — consistent with the IFN-β stimulation design of GSE96583.
+
+**Pseudobulk DE — sample-level confirmation (CD14 monocytes, DESeq2)**
+
+![Pseudobulk heatmap](docs/assets/showcase/pseudobulk_heatmap_cd14mono.png)
+
+Top 50 significant DEG heatmap (vst-normalized values), samples cluster by condition into two groups — step 06 aggregates same-type cells by donor into pseudobulk, DESeq2 treats donor as the statistical unit, resolving the pseudoreplication issue in step 05.
 
 **Trajectory — T-cell lineage (monocle3)**
 
@@ -158,7 +164,7 @@ Two things to keep in mind:
 
 ## Outputs
 
-Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/` + a `.done` resume marker; each run also keeps per-step `logs/` and a `config_used.yaml` parameter snapshot. What each step produces (real files from the run03 validation batch):
+Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/` + a `.done` resume marker; each run also keeps per-step `logs/` and a `config_used.yaml` parameter snapshot. What each step produces (real files from the run04 validation batch):
 
 | Step | Key results | Representative figures |
 |---|---|---|
@@ -201,7 +207,7 @@ Every run archives under `output/<batch>/<step>/` — result `.rds` + `figures/`
 
 - Full dependency list in [environment.yaml](environment.yaml); rebuild with one command:
   `mamba env create -f environment.yaml`
-- Core versions: R 4.5.3, Seurat 5.5.1, SeuratObject 5.4.0, monocle3 1.4.27, harmony, scDblFinder, yaml
+- Core versions: R 4.5.3, Seurat 5.5.1, SeuratObject 5.4.0, monocle3 1.4.27, harmony, scDblFinder, DESeq2, apeglm, yaml
 - ⚠️ 4 packages must be installed from GitHub (not available via conda, see notes at the top of the yaml): SeuratWrappers, CellChat (required) + presto, scCustomize (optional)
 - cellranger 9.0.1 (standalone software, not an R package; see docs/02_cellranger_guide.md)
 

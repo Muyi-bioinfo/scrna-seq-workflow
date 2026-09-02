@@ -42,7 +42,7 @@ FASTQ    ──► bash/00_run_cellranger.sh ──► filtered_feature_bc_matri
 
 ## 脚本粒度设计（参考 hossainlab/sc-workflow）
 
-脚本按**分析阶段**打包，而非每个操作一个脚本（12 个操作 → 7 个脚本）：
+脚本按**分析阶段**打包，而非每个操作一个脚本：
 
 | 打包理由 | 合并 |
 |---------|------|

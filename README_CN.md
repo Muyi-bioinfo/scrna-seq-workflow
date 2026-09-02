@@ -2,9 +2,7 @@
 
 [English](README.md) | 简体中文
 
-> **生产级 scRNA-seq 分析流程：样本级统计（pseudobulk DE）+ 可复现编排 + 防御式工程实践。**
-
-从上游定量到下游分析的 scRNA-seq 完整分析流程。
+> 从上游定量到下游分析的 scRNA-seq 完整分析流程。
 > 在没有真实项目数据的情况下，基于公开教程 + 10x 官方文档自学搭建，Seurat v5 适配。
 > 架构参考 GitHub 主流 scRNA-seq 项目（每步一脚本 + 集中配置 + 顺序 runner，如 [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow)；工业级工作流引擎 Snakemake/Nextflow 的对比见 docs/01）。
 

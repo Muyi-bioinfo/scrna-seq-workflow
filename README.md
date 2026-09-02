@@ -2,9 +2,7 @@
 
 English | [简体中文](README_CN.md)
 
-> **Production-ready scRNA-seq analysis pipeline with sample-aware statistics (pseudobulk DE), reproducible orchestration, and defensive engineering practices.**
-
-A complete single-cell RNA-seq analysis pipeline — from FASTQ quantification to downstream analysis.
+> A complete single-cell RNA-seq analysis pipeline — from FASTQ quantification to downstream analysis.
 > Built as a self-learning project from a public tutorial + 10x Genomics official documentation (no real project data involved), adapted to Seurat v5.
 > The architecture follows mainstream scRNA-seq projects on GitHub: one script per analysis stage + centralized config + a sequential runner (cf. [hossainlab/sc-workflow](https://github.com/hossainlab/sc-workflow)). A comparison with workflow engines such as Snakemake/Nextflow can be found in docs/01.
 

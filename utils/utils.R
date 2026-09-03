@@ -138,9 +138,12 @@ preprocess_scobj <- function(scobj, cfg) {
                                 nfeatures = cfg$preprocess$nfeatures)
 
   top10 <- head(VariableFeatures(scobj), 10)
-  save_fig(VariableFeaturePlot(scobj) +
-             LabelPoints(plot = VariableFeaturePlot(scobj), points = top10, repel = TRUE),
-           "variable_features", type = "default")
+  # 并排两张（原始高变图 + 标注 top10 基因版），图例只保留在右图最右侧：
+  # 基因名标注在面板内部、图例在面板外部，互不遮挡；左图纯散点去图例
+  # ⚠️ 不能用 p1 + p2 + NoLegend()——patchwork 的 + 左结合，NoLegend() 会作用于整张组合图
+  p1 <- VariableFeaturePlot(scobj) + NoLegend()
+  p2 <- LabelPoints(plot = VariableFeaturePlot(scobj), points = top10, repel = TRUE)
+  save_fig(p1 + p2, "variable_features", type = "default")
 
   # 3. 缩放：基因表达中心化，PCA 的必备前置
   #    ⚠️ 默认只缩放高变基因；scale_all = true 时缩放全部基因（内存消耗巨大）
